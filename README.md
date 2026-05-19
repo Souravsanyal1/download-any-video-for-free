@@ -100,4 +100,3 @@ Contributions are always welcome! If you have any suggestions, improvements, or 
 
 Distributed under the ISC License. See `package.json` for details.
 
-Developed with ❤️ by Antigravity Pair.
