@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Local yt-dlp binary directory (auto-downloaded)
+bin/
+
+# Local downloads directory
+downloads/
+
+# Environment variables
+.env
+
+# System files
+.DS_Store
+Thumbs.db

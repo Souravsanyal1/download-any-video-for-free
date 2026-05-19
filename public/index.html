@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AetherStream - Premium Ultra HD Video Downloader (4K / 8K)</title>
+  <meta name="description" content="Download high-quality videos up to 8K from YouTube, TikTok, Instagram, Twitter, and more in 1-click. Free, fast, and local.">
+  <link rel="stylesheet" href="style.css">
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <!-- Ambient background glow elements -->
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+  <div class="glow-orb orb-3"></div>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-area">
+        <div class="logo-icon-glow">
+          <i data-lucide="zap" class="logo-icon"></i>
+        </div>
+        <div class="logo-text">
+          <h1>Aether<span>Stream</span></h1>
+          <span class="tagline">Ultra HD Downloader Engine</span>
+        </div>
+      </div>
+      <div class="engine-status">
+        <div id="status-ytdlp" class="status-indicator loading">
+          <span class="dot"></span>
+          <span class="text">Engine: Initializing...</span>
+        </div>
+        <div id="status-ffmpeg" class="status-indicator warning">
+          <span class="dot"></span>
+          <span class="text">FFmpeg: Checking...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Section -->
+    <main class="main-content">
+      <!-- Search Panel -->
+      <section class="search-section card glass">
+        <h2 class="section-title">Download Any Video Instantly</h2>
+        <p class="section-subtitle">Supports YouTube, Instagram, TikTok, Facebook, Twitter, and 1000+ more.</p>
+        
+        <form id="download-form" class="search-bar-form">
+          <div class="input-wrapper">
+            <i data-lucide="link" class="input-icon"></i>
+            <input 
+              type="url" 
+              id="video-url" 
+              placeholder="Paste video or audio link here..." 
+              required 
+              autocomplete="off"
+            >
+            <button type="button" id="paste-btn" class="icon-action-btn" title="Paste from clipboard">
+              <i data-lucide="clipboard"></i>
+            </button>
+          </div>
+          <button type="submit" id="search-btn" class="primary-btn">
+            <span class="btn-text">Analyze Link</span>
+            <i data-lucide="arrow-right" class="btn-icon"></i>
+          </button>
+        </form>
+      </section>
+
+      <!-- FFmpeg Warning Alert Box -->
+      <div id="ffmpeg-warning" class="alert-box warning-alert hidden">
+        <div class="alert-icon">
+          <i data-lucide="alert-triangle"></i>
+        </div>
+        <div class="alert-content">
+          <h4>FFmpeg is not installed on this system</h4>
+          <p>
+            To merge high-quality separate streams for <strong>2K, 4K, and 8K videos</strong>, FFmpeg is highly recommended. 
+            Without it, files will automatically download in high-speed 720p/1080p (pre-merged) or separate streams.
+          </p>
+        </div>
+      </div>
+
+      <!-- Loading Placeholder -->
+      <div id="loading-spinner" class="loading-container hidden">
+        <div class="spinner-circle"></div>
+        <p class="loading-msg">Extracting rich media details from server...</p>
+      </div>
+
+      <!-- Error Box -->
+      <div id="error-box" class="alert-box danger-alert hidden">
+        <div class="alert-icon">
+          <i data-lucide="x-circle"></i>
+        </div>
+        <div class="alert-content">
+          <h4>Extraction Failed</h4>
+          <p id="error-msg">Something went wrong. Please check your URL and try again.</p>
+        </div>
+      </div>
+
+      <!-- Results Panel -->
+      <section id="results-panel" class="results-section card glass hidden">
+        <div class="results-layout">
+          <!-- Thumbnail Side -->
+          <div class="thumbnail-wrapper">
+            <img id="video-thumbnail" src="" alt="Video Thumbnail" class="video-preview-img">
+            <span id="video-duration" class="duration-badge">00:00</span>
+          </div>
+
+          <!-- Metadata & Quality Side -->
+          <div class="details-wrapper">
+            <span id="video-uploader" class="uploader-tag">Channel Name</span>
+            <h3 id="video-title" class="video-title">Amazing 8K HDR Demonstration Video</h3>
+            
+            <div class="video-stats">
+              <span class="stat-item"><i data-lucide="eye"></i> <span id="video-views">0</span> views</span>
+            </div>
+
+            <!-- Video Rotation Settings -->
+            <div class="processing-settings-area">
+              <h4 class="selector-heading"><i data-lucide="sliders" class="mini-icon"></i> Video Playback Mode (PC / Rotation)</h4>
+              <div class="rotation-options">
+                <label class="rotation-label">
+                  <input type="radio" name="video-rotation" value="none" checked>
+                  <span class="rotation-card">
+                    <i data-lucide="smartphone" class="rot-icon"></i>
+                    <span class="text">Portrait (Original)</span>
+                  </span>
+                </label>
+                <label class="rotation-label">
+                  <input type="radio" name="video-rotation" value="90_cw">
+                  <span class="rotation-card">
+                    <i data-lucide="rotate-cw" class="rot-icon"></i>
+                    <span class="text">Rotate 90° CW (PC Mode)</span>
+                  </span>
+                </label>
+                <label class="rotation-label">
+                  <input type="radio" name="video-rotation" value="90_ccw">
+                  <span class="rotation-card">
+                    <i data-lucide="rotate-ccw" class="rot-icon"></i>
+                    <span class="text">Rotate 90° CCW</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div class="quality-selector-area">
+              <h4 class="selector-heading">Select Resolution Quality</h4>
+              <div class="quality-grid" id="quality-grid">
+                <!-- Dynamic Quality Buttons -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Download Progress Overlay / Card -->
+      <section id="progress-panel" class="progress-section card glass hidden">
+        <div class="progress-header">
+          <div class="progress-title-wrapper">
+            <div class="pulse-loader"></div>
+            <h3 id="progress-status-title">Downloading Stream...</h3>
+          </div>
+          <span id="progress-percent-top" class="progress-percent-accent">0%</span>
+        </div>
+        
+        <div class="progress-bar-container">
+          <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%"></div>
+        </div>
+
+        <div class="progress-metrics-grid">
+          <div class="metric-item">
+            <span class="metric-label">Download Speed</span>
+            <span id="metric-speed" class="metric-value">0.0 MB/s</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">File Size</span>
+            <span id="metric-size" class="metric-value">0.0 MB</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Time Remaining</span>
+            <span id="metric-eta" class="metric-value">00:00</span>
+          </div>
+        </div>
+
+        <div class="progress-actions">
+          <button id="open-folder-btn" class="secondary-btn">
+            <i data-lucide="folder-open"></i>
+            <span>Open Downloads Folder</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Download Completion State -->
+      <section id="completion-panel" class="completion-section card glass hidden">
+        <div class="completion-content">
+          <div class="success-icon-wrapper">
+            <i data-lucide="check-circle" class="success-check-icon"></i>
+          </div>
+          <h3>Download Complete!</h3>
+          <p>Your video has been saved in ultra-high fidelity directly to your local downloads directory.</p>
+          <div class="completion-actions">
+            <button id="complete-open-folder-btn" class="primary-btn">
+              <i data-lucide="folder-open"></i>
+              <span>Access Downloaded Files</span>
+            </button>
+            <button id="download-another-btn" class="secondary-btn">
+              <i data-lucide="refresh-cw"></i>
+              <span>Download Another Video</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Downloads History -->
+      <section class="history-section card glass">
+        <div class="history-header">
+          <h2 class="section-title"><i data-lucide="history" style="vertical-align: middle; margin-right: 8px;"></i>Session Download History</h2>
+          <button id="clear-history-btn" class="text-btn">Clear History</button>
+        </div>
+        <div id="history-list" class="history-list">
+          <div class="empty-history">
+            <i data-lucide="cloud-download" class="empty-history-icon"></i>
+            <p>No downloads in this session yet. Paste a link to get started!</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>&copy; 2026 AetherStream Downloader. Running locally on Windows. Powered by <code class="code-badge">yt-dlp</code>.</p>
+      <div class="footer-links">
+        <button id="footer-folder-trigger" class="footer-link-btn"><i data-lucide="folder" class="footer-mini-icon"></i> Downloads Folder</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "premium-video-downloader",
+  "version": "1.0.0",
+  "description": "A premium web-based video downloader supporting up to 8K downloads using yt-dlp.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "open": "^8.4.2"
+  },
+  "author": "Antigravity Pair",
+  "license": "ISC"
+}
