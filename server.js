@@ -508,12 +508,19 @@ app.post('/api/download', async (req, res) => {
                 }
                 fs.renameSync(tempPath, downloadedFilePath);
                 console.log(`✔ Direct FFmpeg rotation completed successfully. Saved to: ${downloadedFilePath}`);
-                sendProgress(id, { status: 'completed' });
+                sendProgress(id, { 
+                  status: 'completed', 
+                  fileName: path.basename(downloadedFilePath),
+                  fileUrl: `/api/get-file?name=${encodeURIComponent(path.basename(downloadedFilePath))}`
+                });
               } catch (err) {
                 console.error('Error replacing rotated file (likely locked):', err);
-                // Keep the rotated version as _rotated.ext so they still get it!
                 console.log(`✔ Keeping rotated file due to lock: ${tempPath}`);
-                sendProgress(id, { status: 'completed' });
+                sendProgress(id, { 
+                  status: 'completed', 
+                  fileName: path.basename(tempPath),
+                  fileUrl: `/api/get-file?name=${encodeURIComponent(path.basename(tempPath))}`
+                });
               }
             } else {
               console.error(`✘ Direct FFmpeg rotation failed with code: ${ffmpegCode}`);
@@ -521,10 +528,20 @@ app.post('/api/download', async (req, res) => {
             }
           });
         } else {
-          sendProgress(id, { status: 'completed' });
+          const fn = downloadedFilePath ? path.basename(downloadedFilePath) : '';
+          sendProgress(id, { 
+            status: 'completed', 
+            fileName: fn,
+            fileUrl: fn ? `/api/get-file?name=${encodeURIComponent(fn)}` : '/api/get-file'
+          });
         }
       } else {
-        sendProgress(id, { status: 'completed' });
+        const fn = downloadedFilePath ? path.basename(downloadedFilePath) : '';
+        sendProgress(id, { 
+          status: 'completed', 
+          fileName: fn,
+          fileUrl: fn ? `/api/get-file?name=${encodeURIComponent(fn)}` : '/api/get-file'
+        });
       }
     } else {
       console.error(`✘ Download [${id}] failed with code ${code}`);
@@ -533,30 +550,57 @@ app.post('/api/download', async (req, res) => {
   });
 });
 
-// Route: Open Downloads folder
+// Route: Get / Instant Save file to browser
+app.get('/api/get-file', (req, res) => {
+  const fileName = req.query.name;
+  if (fileName) {
+    const safePath = path.join(downloadsDir, path.basename(fileName));
+    if (fs.existsSync(safePath)) {
+      return res.download(safePath);
+    }
+  }
+
+  // Fallback: download most recent file in downloads directory
+  if (fs.existsSync(downloadsDir)) {
+    const files = fs.readdirSync(downloadsDir).filter(f => !f.startsWith('.'));
+    if (files.length > 0) {
+      files.sort((a, b) => {
+        return fs.statSync(path.join(downloadsDir, b)).mtimeMs - fs.statSync(path.join(downloadsDir, a)).mtimeMs;
+      });
+      return res.download(path.join(downloadsDir, files[0]));
+    }
+  }
+
+  res.status(404).send('No file available for download.');
+});
+
+// Route: Open Downloads folder in Windows Explorer
 app.post('/api/open-downloads', (req, res) => {
   if (!fs.existsSync(downloadsDir)) {
     fs.mkdirSync(downloadsDir, { recursive: true });
   }
 
-  const cmd = process.platform === 'win32'
-    ? `explorer "${downloadsDir}"`
+  const commands = process.platform === 'win32'
+    ? [`powershell -Command "Start-Process '${downloadsDir}'"`, `explorer "${downloadsDir}"`]
     : process.platform === 'darwin'
-      ? `open "${downloadsDir}"`
-      : `xdg-open "${downloadsDir}"`;
+      ? [`open "${downloadsDir}"`]
+      : [`xdg-open "${downloadsDir}"`];
 
-  exec(cmd, (error) => {
-    if (error) {
-      console.error('Failed to open downloads folder via exec:', error);
-      // Fallback to open library
-      open(downloadsDir).then(() => res.json({ success: true })).catch(() => {
-        res.status(500).json({ error: 'Failed to open folder' });
-      });
-    } else {
-      res.json({ success: true });
+  let idx = 0;
+  function tryExec() {
+    if (idx >= commands.length) {
+      return res.json({ success: true, path: downloadsDir });
     }
-  });
+    exec(commands[idx], (err) => {
+      // PowerShell Start-Process or open returns 0 exit code
+      res.json({ success: true, path: downloadsDir });
+    });
+  }
+
+  tryExec();
 });
+
+
 
 
 if (require.main === module) {

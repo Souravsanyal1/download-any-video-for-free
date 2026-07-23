@@ -45,11 +45,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const historyList = document.getElementById('history-list');
   const clearHistoryBtn = document.getElementById('clear-history-btn');
   const downloadAnotherBtn = document.getElementById('download-another-btn');
+  const saveFileBrowserBtn = document.getElementById('save-file-browser-btn');
 
   // Application State
   let currentVideoData = null;
   let activeEventSource = null;
+  let lastCompletedFileUrl = '';
   let downloadHistory = JSON.parse(localStorage.getItem('downloader_history') || '[]');
+
 
   // Safe fetch wrapper with precision error catching
   async function fetchJSON(url, options = {}) {
@@ -309,6 +312,10 @@ document.addEventListener('DOMContentLoaded', () => {
         activeEventSource.close();
         activeEventSource = null;
         
+        if (data.fileUrl) {
+          lastCompletedFileUrl = data.fileUrl;
+        }
+
         // Log to Session History
         saveToHistory({
           title: currentVideoData.title,
@@ -363,14 +370,22 @@ document.addEventListener('DOMContentLoaded', () => {
       await fetchJSON('/api/open-downloads', { method: 'POST' });
     } catch (e) {
       console.error('Open folder error:', e);
-      alert('Could not open downloads directory automatically.');
+      // Fallback: trigger instant browser download
+      window.location.href = lastCompletedFileUrl || '/api/get-file';
     }
   }
 
-  // Folder Triggers
+  // Folder & File Download Triggers
   openFolderBtn.addEventListener('click', openDownloadsDirectory);
   completeOpenFolderBtn.addEventListener('click', openDownloadsDirectory);
   footerFolderTrigger.addEventListener('click', openDownloadsDirectory);
+
+  if (saveFileBrowserBtn) {
+    saveFileBrowserBtn.addEventListener('click', () => {
+      window.location.href = lastCompletedFileUrl || '/api/get-file';
+    });
+  }
+
 
   // History cache logging
   function saveToHistory(item) {
