@@ -190,19 +190,19 @@ app.get('/api/info', async (req, res) => {
         '8k': heights.has(4320) || heights.has(2880) || formats.some(f => f.format_note && f.format_note.includes('4320p')),
         '4k': heights.has(2160) || formats.some(f => f.format_note && f.format_note.includes('2160p')),
         '2k': heights.has(1440) || formats.some(f => f.format_note && f.format_note.includes('1440p')),
-        '1080p': heights.has(1080) || formats.some(f => f.format_note && f.format_note.includes('1080p')) || formats.some(f => f.vcodec !== 'none' && f.height >= 1000 && f.height < 1400),
-        '720p': heights.has(720) || formats.some(f => f.format_note && f.format_note.includes('720p')) || formats.some(f => f.vcodec !== 'none' && f.height >= 600 && f.height < 1000),
-        '480p': heights.has(480) || formats.some(f => f.format_note && f.format_note.includes('480p')) || formats.some(f => f.vcodec !== 'none' && f.height >= 400 && f.height < 600),
-        '360p': heights.has(360) || formats.some(f => f.format_note && f.format_note.includes('360p')) || formats.some(f => f.vcodec !== 'none' && f.height >= 240 && f.height < 400),
+        '1080p': heights.has(1080) || formats.some(f => (f.height >= 1000 && f.height <= 1400) || (f.width >= 1000 && f.width <= 1400)),
+        '720p': heights.has(720) || formats.some(f => (f.height >= 600 && f.height <= 999) || (f.width >= 600 && f.width <= 999)),
+        '480p': heights.has(480) || formats.some(f => (f.height >= 400 && f.height <= 599) || (f.width >= 400 && f.width <= 599)),
+        '360p': heights.has(360) || formats.some(f => (f.height >= 200 && f.height <= 399) || (f.width >= 200 && f.width <= 399)),
         'audio': true
       };
 
       // Fallback: If there is video content but no standard category was matched,
-      // map the best available format as "720p" or "1080p" so they can click and download!
+      // map the best available format as "720p" or "1080p" so users can download
       const matchedAnyVideo = ['8k', '4k', '2k', '1080p', '720p', '480p', '360p'].some(q => availableQualities[q]);
       if (hasVideo && !matchedAnyVideo) {
         const maxHeight = Math.max(...formats.map(f => f.height).filter(h => h), 0);
-        if (maxHeight >= 1080) {
+        if (maxHeight >= 1000) {
           availableQualities['1080p'] = true;
         } else {
           availableQualities['720p'] = true;
@@ -267,7 +267,7 @@ app.post('/api/download', async (req, res) => {
   }
 
   console.log(`Starting download [${id}] - Quality: ${quality}, Rotation: ${rotate || 'none'} for URL: ${url}`);
-  res.json({ status: 'started' }); // Acknowledge request, progress streamed via SSE
+  res.json({ status: 'started' });
 
   // Build formatting rules
   let formatArg = 'best';
@@ -275,7 +275,9 @@ app.post('/api/download', async (req, res) => {
 
   if (quality === 'audio') {
     formatArg = 'bestaudio/best';
-    postProcessArgs = ['-x', '--audio-format', 'mp3', '--audio-quality', '0'];
+    if (hasFfmpeg) {
+      postProcessArgs = ['-x', '--audio-format', 'mp3', '--audio-quality', '0'];
+    }
   } else {
     // Map quality tag to max height
     let maxHeight = 1080;
@@ -287,21 +289,21 @@ app.post('/api/download', async (req, res) => {
     else if (quality === '480p') maxHeight = 480;
     else if (quality === '360p') maxHeight = 360;
 
-    if (hasFfmpeg) {
-      // Merge best video up to height with best audio, falling back to any quality or pre-merged best format
-      formatArg = `bestvideo[height<=${maxHeight}]+bestaudio/best[height<=${maxHeight}]/bestvideo+bestaudio/best`;
-    } else {
-      // No FFmpeg: must fetch pre-merged format, fallback to best available
-      formatArg = `best[height<=${maxHeight}]/best`;
-    }
+    const heightLimit = maxHeight > 360 ? maxHeight + 100 : maxHeight;
 
-    // Rotation is handled manually post-download inside the 'close' event handler to work perfectly on all platforms.
+    if (hasFfmpeg) {
+      formatArg = `bestvideo[height<=${heightLimit}]+bestaudio/best[height<=${heightLimit}]/bestvideo+bestaudio/best`;
+    } else {
+      // Without FFmpeg: Must prefer direct HTTP progressive mp4 streams (non-m3u8) so it downloads without FFmpeg muxing
+      formatArg = `best[protocol^=http][height<=${heightLimit}]/best[ext=mp4][height<=${heightLimit}]/b[height<=${heightLimit}]/best[height<=${heightLimit}]/best[protocol^=http]/best`;
+    }
   }
 
-  // File naming: Output directory / Title.Extension
   const outputTemplate = path.join(downloadsDir, '%(title)s.%(ext)s');
 
   const args = [
+    '--no-playlist',
+    '--no-check-certificates',
     '-f', formatArg,
     '-o', outputTemplate,
     '--force-overwrites',
@@ -309,6 +311,7 @@ app.post('/api/download', async (req, res) => {
     ...postProcessArgs,
     url
   ];
+
 
   const child = spawn(ytdlpPath, args);
   let downloadedFilePath = '';
