@@ -50,7 +50,7 @@ const ytdlpUrl = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${yt
 
 
 let hasFfmpeg = false;
-let isYtdlpReady = false;
+let isYtdlpReady = fs.existsSync(ytdlpPath);
 let downloadProgressStreams = {}; // Store SSE responses to stream progress
 
 // Check if FFmpeg is installed
