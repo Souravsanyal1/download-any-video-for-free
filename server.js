@@ -535,13 +535,29 @@ app.post('/api/download', async (req, res) => {
 
 // Route: Open Downloads folder
 app.post('/api/open-downloads', (req, res) => {
-  open(downloadsDir)
-    .then(() => res.json({ success: true }))
-    .catch((err) => {
-      console.error('Failed to open downloads folder:', err);
-      res.status(500).json({ error: 'Failed to open directory' });
-    });
+  if (!fs.existsSync(downloadsDir)) {
+    fs.mkdirSync(downloadsDir, { recursive: true });
+  }
+
+  const cmd = process.platform === 'win32'
+    ? `explorer "${downloadsDir}"`
+    : process.platform === 'darwin'
+      ? `open "${downloadsDir}"`
+      : `xdg-open "${downloadsDir}"`;
+
+  exec(cmd, (error) => {
+    if (error) {
+      console.error('Failed to open downloads folder via exec:', error);
+      // Fallback to open library
+      open(downloadsDir).then(() => res.json({ success: true })).catch(() => {
+        res.status(500).json({ error: 'Failed to open folder' });
+      });
+    } else {
+      res.json({ success: true });
+    }
+  });
 });
+
 
 if (require.main === module) {
   app.listen(PORT, () => {
