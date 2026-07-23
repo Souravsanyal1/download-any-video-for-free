@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+const os = require('os');
 const { spawn, exec } = require('child_process');
 const open = require('open');
 
@@ -22,15 +23,22 @@ app.use(express.static(path.join(__dirname, 'public'), {
   }
 }));
 
-// Create paths
-const binDir = path.join(__dirname, 'bin');
-const downloadsDir = path.join(__dirname, 'downloads');
+// Determine writable directory based on environment (Vercel uses /tmp)
+const isVercel = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const baseDir = isVercel ? os.tmpdir() : __dirname;
 
-if (!fs.existsSync(binDir)) {
-  fs.mkdirSync(binDir, { recursive: true });
-}
-if (!fs.existsSync(downloadsDir)) {
-  fs.mkdirSync(downloadsDir, { recursive: true });
+const binDir = path.join(baseDir, 'bin');
+const downloadsDir = path.join(baseDir, 'downloads');
+
+try {
+  if (!fs.existsSync(binDir)) {
+    fs.mkdirSync(binDir, { recursive: true });
+  }
+  if (!fs.existsSync(downloadsDir)) {
+    fs.mkdirSync(downloadsDir, { recursive: true });
+  }
+} catch (e) {
+  console.error('Directory creation warning:', e.message);
 }
 
 // OS specific binary
@@ -38,6 +46,7 @@ const isWindows = process.platform === 'win32';
 const ytdlpFilename = isWindows ? 'yt-dlp.exe' : 'yt-dlp';
 const ytdlpPath = path.join(binDir, ytdlpFilename);
 const ytdlpUrl = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${ytdlpFilename}`;
+
 
 let hasFfmpeg = false;
 let isYtdlpReady = false;
