@@ -219,6 +219,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Trigger Download Processing
   async function startDownload(url, quality) {
+    const isVercelHost = window.location.hostname.includes('vercel');
+    const directUrl = (currentVideoData && currentVideoData.direct_urls) ? currentVideoData.direct_urls[quality] : null;
+
+    // Direct Browser Download (Works seamlessly on Vercel, phones, and PCs)
+    if (directUrl || isVercelHost) {
+      const streamTarget = directUrl || `/api/stream?url=${encodeURIComponent(url)}&quality=${quality}`;
+      const link = document.createElement('a');
+      link.href = streamTarget;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      if (currentVideoData) {
+        saveToHistory({
+          title: currentVideoData.title,
+          thumbnail: currentVideoData.thumbnail,
+          quality: quality,
+          uploader: currentVideoData.uploader,
+          duration: currentVideoData.duration,
+          timestamp: Date.now()
+        });
+      }
+
+      hideAllPanels();
+      completionPanel.classList.remove('hidden');
+      completionPanel.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+
     const rotationActive = document.querySelector('input[name="video-rotation"]:checked');
     const rotate = rotationActive ? rotationActive.value : 'none';
 
@@ -238,6 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (progressStatusTitle) {
       progressStatusTitle.textContent = 'Downloading Stream...';
     }
+
 
     // Start listening to the progress channel (SSE)
     if (activeEventSource) {

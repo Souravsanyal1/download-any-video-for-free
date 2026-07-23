@@ -209,6 +209,21 @@ app.get('/api/info', async (req, res) => {
         }
       }
 
+      const directUrls = {};
+      formats.forEach(f => {
+        if (f.url && f.ext === 'mp4' && (f.protocol === 'https' || f.protocol === 'http') && !f.url.includes('.m3u8')) {
+          const h = f.height || 0;
+          const w = f.width || 0;
+          if ((h >= 1000 || w >= 1000) && !directUrls['1080p']) directUrls['1080p'] = f.url;
+          else if ((h >= 600 || w >= 600) && !directUrls['720p']) directUrls['720p'] = f.url;
+          else if ((h >= 400 || w >= 400) && !directUrls['480p']) directUrls['480p'] = f.url;
+          else if ((h >= 200 || w >= 200) && !directUrls['360p']) directUrls['360p'] = f.url;
+        }
+      });
+      if (info.url && !info.url.includes('.m3u8') && !directUrls['720p']) {
+        directUrls['720p'] = info.url;
+      }
+
       res.json({
         title: info.title,
         thumbnail: info.thumbnail || (info.thumbnails && info.thumbnails.length ? info.thumbnails[info.thumbnails.length - 1].url : ''),
@@ -217,7 +232,8 @@ app.get('/api/info', async (req, res) => {
         uploader: info.uploader || info.channel || 'Unknown',
         views: info.view_count ? info.view_count.toLocaleString() : 'Unknown',
         webpage_url: info.webpage_url,
-        qualities: availableQualities
+        qualities: availableQualities,
+        direct_urls: directUrls
       });
     } catch (err) {
       console.error('Failed to parse yt-dlp output:', err);
@@ -225,6 +241,65 @@ app.get('/api/info', async (req, res) => {
     }
   });
 });
+
+// Route: Direct Stream Download (Pipes stdout straight to browser attachment)
+app.get('/api/stream', async (req, res) => {
+  const videoUrl = req.query.url;
+  const quality = req.query.quality || '720p';
+
+  if (!videoUrl) {
+    return res.status(400).send('Video URL is required');
+  }
+
+  try {
+    await ensureYtdlp();
+  } catch (e) {
+    return res.status(500).send('yt-dlp engine is not ready.');
+  }
+
+  let maxHeight = 1080;
+  if (quality === '8k') maxHeight = 4320;
+  else if (quality === '4k') maxHeight = 2160;
+  else if (quality === '2k') maxHeight = 1440;
+  else if (quality === '1080p') maxHeight = 1080;
+  else if (quality === '720p') maxHeight = 720;
+  else if (quality === '480p') maxHeight = 480;
+  else if (quality === '360p') maxHeight = 360;
+
+  const heightLimit = maxHeight > 360 ? maxHeight + 100 : maxHeight;
+
+  let formatArg = quality === 'audio' 
+    ? 'bestaudio/best' 
+    : (hasFfmpeg 
+        ? `bestvideo[height<=${heightLimit}]+bestaudio/best[height<=${heightLimit}]/bestvideo+bestaudio/best` 
+        : `best[protocol^=http][height<=${heightLimit}]/best[ext=mp4][height<=${heightLimit}]/b[height<=${heightLimit}]/best[height<=${heightLimit}]/best[protocol^=http]/best`);
+
+  const ext = quality === 'audio' ? 'mp3' : 'mp4';
+  const fileName = `media_${Date.now()}.${ext}`;
+
+  res.setHeader('Content-Type', quality === 'audio' ? 'audio/mpeg' : 'video/mp4');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+  const args = [
+    '--no-playlist',
+    '--no-check-certificates',
+    '-f', formatArg,
+    '-o', '-',
+    videoUrl
+  ];
+
+  const child = spawn(ytdlpPath, args);
+  child.stdout.pipe(res);
+
+  child.stderr.on('data', (data) => {
+    console.error(`[stream-err]: ${data.toString()}`);
+  });
+
+  req.on('close', () => {
+    try { child.kill(); } catch (e) {}
+  });
+});
+
 
 // SSE Route: Real-time progress channel
 app.get('/api/progress', (req, res) => {
