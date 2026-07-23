@@ -456,15 +456,19 @@ app.post('/api/open-downloads', (req, res) => {
     });
 });
 
-app.listen(PORT, () => {
-  console.log(`===============================================`);
-  console.log(`  Premium Video Downloader running locally!  `);
-  console.log(`  URL: http://localhost:${PORT}             `);
-  console.log(`  Downloading files to: ${downloadsDir}      `);
-  console.log(`===============================================`);
-  
-  // Auto-launch default browser page
-  open(`http://localhost:${PORT}`).catch((err) => {
-    console.log('Failed to automatically open browser:', err.message);
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`===============================================`);
+    console.log(`  Premium Video Downloader running locally!  `);
+    console.log(`  URL: http://localhost:${PORT}             `);
+    console.log(`  Downloading files to: ${downloadsDir}      `);
+    console.log(`===============================================`);
+    
+    open(`http://localhost:${PORT}`).catch((err) => {
+      console.log('Failed to automatically open browser:', err.message);
+    });
   });
-});
+}
+
+module.exports = app;
+
