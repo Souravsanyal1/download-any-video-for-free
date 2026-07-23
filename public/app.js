@@ -691,63 +691,251 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Inpainting Algorithm for Image Watermark Removal
-  btnEraseImgWm.addEventListener('click', () => {
-    if (!currentImage || !imgCtx) return;
+  // Presets & Algorithm Controls
+  const presetGeminiBr = document.getElementById('preset-gemini-br');
+  const presetBottomLeft = document.getElementById('preset-bottom-left');
+  const batchQueueContainer = document.getElementById('batch-queue-container');
+  const batchQueueList = document.getElementById('batch-queue-list');
+  const batchCount = document.getElementById('batch-count');
+  const btnProcessBatchAll = document.getElementById('btn-process-batch-all');
 
-    const w = imgCanvas.width;
-    const h = imgCanvas.height;
+  let batchImages = [];
 
-    const imgData = imgCtx.getImageData(0, 0, w, h);
-    const maskData = maskCtx.getImageData(0, 0, w, h);
+  // Preset Handlers
+  if (presetGeminiBr) {
+    presetGeminiBr.addEventListener('click', () => {
+      if (!maskCtx || !imgCanvas) return;
+      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+      const size = Math.max(64, Math.round(imgCanvas.width * 0.12));
+      const x = Math.max(0, imgCanvas.width - size - 10);
+      const y = Math.max(0, imgCanvas.height - size - 10);
+      maskCtx.fillStyle = '#ff0055';
+      maskCtx.fillRect(x, y, size, size);
+      redrawImageStage();
+    });
+  }
+
+  if (presetBottomLeft) {
+    presetBottomLeft.addEventListener('click', () => {
+      if (!maskCtx || !imgCanvas) return;
+      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+      const size = Math.max(64, Math.round(imgCanvas.width * 0.12));
+      const x = 10;
+      const y = Math.max(0, imgCanvas.height - size - 10);
+      maskCtx.fillStyle = '#ff0055';
+      maskCtx.fillRect(x, y, size, size);
+      redrawImageStage();
+    });
+  }
+
+  // Multi-File Upload & Batch Queue
+  imgFileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files.length > 1) {
+      handleBatchUpload(Array.from(e.target.files));
+    }
+  });
+
+  function handleBatchUpload(files) {
+    batchImages = files.filter(f => f.type.startsWith('image/'));
+    if (batchImages.length === 0) return;
+
+    batchCount.textContent = batchImages.length;
+    batchQueueList.innerHTML = '';
+
+    batchImages.forEach((file, index) => {
+      const card = document.createElement('div');
+      card.className = 'batch-item-card';
+      const url = URL.createObjectURL(file);
+      card.innerHTML = `
+        <img src="${url}" class="batch-thumb" alt="Thumbnail">
+        <span class="batch-item-name">${file.name}</span>
+        <span id="batch-status-${index}" class="batch-status-badge pending">Pending</span>
+        <a id="batch-dl-${index}" class="primary-btn sm hidden" download="clean_${file.name}"><i data-lucide="download"></i> Download</a>
+      `;
+      batchQueueList.appendChild(card);
+    });
+
+    batchQueueContainer.classList.remove('hidden');
+    lucide.createIcons();
+  }
+
+  // Reverse Alpha Blending & Inpainting Processing
+  function processWatermarkRemoval(sourceCanvas, sourceMaskCanvas, mode = 'alpha') {
+    const w = sourceCanvas.width;
+    const h = sourceCanvas.height;
+
+    const sCtx = sourceCanvas.getContext('2d');
+    const mCtx = sourceMaskCanvas.getContext('2d');
+
+    const imgData = sCtx.getImageData(0, 0, w, h);
+    const maskData = mCtx.getImageData(0, 0, w, h);
 
     const pixels = imgData.data;
     const mask = maskData.data;
 
-    // Fast Inpainting / Smooth Patch Blend
-    const passes = 3;
-    for (let pass = 0; pass < passes; pass++) {
-      for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
+    if (mode === 'alpha') {
+      // High-Precision Reverse Alpha Blending Engine (Gemini / AI Logo Unmixing)
+      // Original = (Watermarked - alpha * WatermarkColor) / (1 - alpha)
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
           const idx = (y * w + x) * 4;
 
-          // If mask is drawn over pixel
           if (mask[idx + 3] > 0) {
-            let rAcc = 0, gAcc = 0, bAcc = 0, count = 0;
+            // Sample surrounding clean border pixels for background estimate
+            let rBorder = 0, gBorder = 0, bBorder = 0, count = 0;
 
-            const neighbors = [
-              ((y - 1) * w + x) * 4,
-              ((y + 1) * w + x) * 4,
-              (y * w + (x - 1)) * 4,
-              (y * w + (x + 1)) * 4,
-              ((y - 1) * w + (x - 1)) * 4,
-              ((y - 1) * w + (x + 1)) * 4,
-              ((y + 1) * w + (x - 1)) * 4,
-              ((y + 1) * w + (x + 1)) * 4
-            ];
-
-            for (let nIdx of neighbors) {
-              if (mask[nIdx + 3] === 0 || pass > 0) {
-                rAcc += pixels[nIdx];
-                gAcc += pixels[nIdx + 1];
-                bAcc += pixels[nIdx + 2];
-                count++;
+            const radius = 6;
+            for (let dy = -radius; dy <= radius; dy++) {
+              for (let dx = -radius; dx <= radius; dx++) {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                  const nIdx = (ny * w + nx) * 4;
+                  if (mask[nIdx + 3] === 0) {
+                    rBorder += pixels[nIdx];
+                    gBorder += pixels[nIdx + 1];
+                    bBorder += pixels[nIdx + 2];
+                    count++;
+                  }
+                }
               }
             }
 
-            if (count > 0) {
-              pixels[idx] = Math.round(rAcc / count);
-              pixels[idx + 1] = Math.round(gAcc / count);
-              pixels[idx + 2] = Math.round(bAcc / count);
+            const bgR = count > 0 ? rBorder / count : pixels[idx];
+            const bgG = count > 0 ? gBorder / count : pixels[idx + 1];
+            const bgB = count > 0 ? bBorder / count : pixels[idx + 2];
+
+            // Reverse alpha un-blending formula with contrast protection
+            const alphaEst = 0.45;
+            pixels[idx] = Math.max(0, Math.min(255, Math.round((pixels[idx] - alphaEst * 220) / (1 - alphaEst) * 0.4 + bgR * 0.6)));
+            pixels[idx + 1] = Math.max(0, Math.min(255, Math.round((pixels[idx + 1] - alphaEst * 220) / (1 - alphaEst) * 0.4 + bgG * 0.6)));
+            pixels[idx + 2] = Math.max(0, Math.min(255, Math.round((pixels[idx + 2] - alphaEst * 220) / (1 - alphaEst) * 0.4 + bgB * 0.6)));
+          }
+        }
+      }
+    } else {
+      // Inpainting / Smooth Patch Blend
+      const passes = 3;
+      for (let pass = 0; pass < passes; pass++) {
+        for (let y = 1; y < h - 1; y++) {
+          for (let x = 1; x < w - 1; x++) {
+            const idx = (y * w + x) * 4;
+
+            if (mask[idx + 3] > 0) {
+              let rAcc = 0, gAcc = 0, bAcc = 0, count = 0;
+
+              const neighbors = [
+                ((y - 1) * w + x) * 4,
+                ((y + 1) * w + x) * 4,
+                (y * w + (x - 1)) * 4,
+                (y * w + (x + 1)) * 4,
+                ((y - 1) * w + (x - 1)) * 4,
+                ((y - 1) * w + (x + 1)) * 4,
+                ((y + 1) * w + (x - 1)) * 4,
+                ((y + 1) * w + (x + 1)) * 4
+              ];
+
+              for (let nIdx of neighbors) {
+                if (mask[nIdx + 3] === 0 || pass > 0) {
+                  rAcc += pixels[nIdx];
+                  gAcc += pixels[nIdx + 1];
+                  bAcc += pixels[nIdx + 2];
+                  count++;
+                }
+              }
+
+              if (count > 0) {
+                pixels[idx] = Math.round(rAcc / count);
+                pixels[idx + 1] = Math.round(gAcc / count);
+                pixels[idx + 2] = Math.round(bAcc / count);
+              }
             }
           }
         }
       }
     }
 
-    // Render result canvas
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = w;
+    const resCanvas = document.createElement('canvas');
+    resCanvas.width = w;
+    resCanvas.height = h;
+    const rCtx = resCanvas.getContext('2d');
+    rCtx.putImageData(imgData, 0, 0);
+    return resCanvas;
+  }
+
+  // Trigger Single Image Processing
+  btnEraseImgWm.addEventListener('click', () => {
+    if (!currentImage || !imgCtx) return;
+
+    const selectedAlgo = document.querySelector('input[name="wm-algo"]:checked') ? document.querySelector('input[name="wm-algo"]:checked').value : 'alpha';
+    const cleanCanvas = processWatermarkRemoval(imgCanvas, maskCanvas, selectedAlgo);
+
+    const resultUrl = cleanCanvas.toDataURL('image/png');
+    imgResultPreview.src = resultUrl;
+    btnDownloadCleanImg.href = resultUrl;
+    btnDownloadCleanImg.download = `clean_image_${Date.now()}.png`;
+
+    imgResultSection.classList.remove('hidden');
+    imgResultSection.scrollIntoView({ behavior: 'smooth' });
+  });
+
+  // Batch All Process Trigger
+  if (btnProcessBatchAll) {
+    btnProcessBatchAll.addEventListener('click', async () => {
+      if (batchImages.length === 0) return;
+
+      const selectedAlgo = document.querySelector('input[name="wm-algo"]:checked') ? document.querySelector('input[name="wm-algo"]:checked').value : 'alpha';
+
+      for (let i = 0; i < batchImages.length; i++) {
+        const file = batchImages[i];
+        const badge = document.getElementById(`batch-status-${i}`);
+        const dlBtn = document.getElementById(`batch-dl-${i}`);
+
+        if (badge) badge.textContent = 'Processing...';
+
+        await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            const img = new Image();
+            img.onload = () => {
+              const c = document.createElement('canvas');
+              c.width = img.naturalWidth;
+              c.height = img.naturalHeight;
+              const ctx = c.getContext('2d');
+              ctx.drawImage(img, 0, 0);
+
+              const mc = document.createElement('canvas');
+              mc.width = img.naturalWidth;
+              mc.height = img.naturalHeight;
+              const mCtx = mc.getContext('2d');
+
+              // Apply bottom-right preset mask
+              const size = Math.max(64, Math.round(img.naturalWidth * 0.12));
+              const x = Math.max(0, img.naturalWidth - size - 10);
+              const y = Math.max(0, img.naturalHeight - size - 10);
+              mCtx.fillStyle = '#ff0055';
+              mCtx.fillRect(x, y, size, size);
+
+              const cleanC = processWatermarkRemoval(c, mc, selectedAlgo);
+              const cleanUrl = cleanC.toDataURL('image/png');
+
+              if (badge) {
+                badge.textContent = 'Completed';
+                badge.className = 'batch-status-badge done';
+              }
+              if (dlBtn) {
+                dlBtn.href = cleanUrl;
+                dlBtn.classList.remove('hidden');
+              }
+              resolve();
+            };
+            img.src = evt.target.result;
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+    });
+  }
     tempCanvas.height = h;
     const tempCtx = tempCanvas.getContext('2d');
     tempCtx.putImageData(imgData, 0, 0);
