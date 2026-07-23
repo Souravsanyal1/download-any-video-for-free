@@ -773,82 +773,40 @@ document.addEventListener('DOMContentLoaded', () => {
     const pixels = imgData.data;
     const mask = maskData.data;
 
-    if (mode === 'alpha') {
-      // High-Precision Reverse Alpha Blending Engine (Gemini / AI Logo Unmixing)
-      // Original = (Watermarked - alpha * WatermarkColor) / (1 - alpha)
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
+    // Multi-pass boundary-propagating inpainting algorithm
+    const passes = mode === 'alpha' ? 10 : 15;
+    for (let pass = 0; pass < passes; pass++) {
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
           const idx = (y * w + x) * 4;
 
           if (mask[idx + 3] > 0) {
-            // Sample surrounding clean border pixels for background estimate
-            let rBorder = 0, gBorder = 0, bBorder = 0, count = 0;
+            let rAcc = 0, gAcc = 0, bAcc = 0, weightAcc = 0;
 
-            const radius = 6;
+            const radius = 3;
             for (let dy = -radius; dy <= radius; dy++) {
               for (let dx = -radius; dx <= radius; dx++) {
+                if (dx === 0 && dy === 0) continue;
                 const nx = x + dx;
                 const ny = y + dy;
                 if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
                   const nIdx = (ny * w + nx) * 4;
-                  if (mask[nIdx + 3] === 0) {
-                    rBorder += pixels[nIdx];
-                    gBorder += pixels[nIdx + 1];
-                    bBorder += pixels[nIdx + 2];
-                    count++;
+                  if (mask[nIdx + 3] === 0 || pass > 0) {
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const weight = 1 / (dist * dist);
+                    rAcc += pixels[nIdx] * weight;
+                    gAcc += pixels[nIdx + 1] * weight;
+                    bAcc += pixels[nIdx + 2] * weight;
+                    weightAcc += weight;
                   }
                 }
               }
             }
 
-            const bgR = count > 0 ? rBorder / count : pixels[idx];
-            const bgG = count > 0 ? gBorder / count : pixels[idx + 1];
-            const bgB = count > 0 ? bBorder / count : pixels[idx + 2];
-
-            // Reverse alpha un-blending formula with contrast protection
-            const alphaEst = 0.45;
-            pixels[idx] = Math.max(0, Math.min(255, Math.round((pixels[idx] - alphaEst * 220) / (1 - alphaEst) * 0.4 + bgR * 0.6)));
-            pixels[idx + 1] = Math.max(0, Math.min(255, Math.round((pixels[idx + 1] - alphaEst * 220) / (1 - alphaEst) * 0.4 + bgG * 0.6)));
-            pixels[idx + 2] = Math.max(0, Math.min(255, Math.round((pixels[idx + 2] - alphaEst * 220) / (1 - alphaEst) * 0.4 + bgB * 0.6)));
-          }
-        }
-      }
-    } else {
-      // Inpainting / Smooth Patch Blend
-      const passes = 3;
-      for (let pass = 0; pass < passes; pass++) {
-        for (let y = 1; y < h - 1; y++) {
-          for (let x = 1; x < w - 1; x++) {
-            const idx = (y * w + x) * 4;
-
-            if (mask[idx + 3] > 0) {
-              let rAcc = 0, gAcc = 0, bAcc = 0, count = 0;
-
-              const neighbors = [
-                ((y - 1) * w + x) * 4,
-                ((y + 1) * w + x) * 4,
-                (y * w + (x - 1)) * 4,
-                (y * w + (x + 1)) * 4,
-                ((y - 1) * w + (x - 1)) * 4,
-                ((y - 1) * w + (x + 1)) * 4,
-                ((y + 1) * w + (x - 1)) * 4,
-                ((y + 1) * w + (x + 1)) * 4
-              ];
-
-              for (let nIdx of neighbors) {
-                if (mask[nIdx + 3] === 0 || pass > 0) {
-                  rAcc += pixels[nIdx];
-                  gAcc += pixels[nIdx + 1];
-                  bAcc += pixels[nIdx + 2];
-                  count++;
-                }
-              }
-
-              if (count > 0) {
-                pixels[idx] = Math.round(rAcc / count);
-                pixels[idx + 1] = Math.round(gAcc / count);
-                pixels[idx + 2] = Math.round(bAcc / count);
-              }
+            if (weightAcc > 0) {
+              pixels[idx] = Math.round(rAcc / weightAcc);
+              pixels[idx + 1] = Math.round(gAcc / weightAcc);
+              pixels[idx + 2] = Math.round(bAcc / weightAcc);
             }
           }
         }
@@ -866,6 +824,21 @@ document.addEventListener('DOMContentLoaded', () => {
   // Trigger Single Image Processing
   btnEraseImgWm.addEventListener('click', () => {
     if (!currentImage || !imgCtx) return;
+
+    // Check if mask has any non-zero pixels
+    const mData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
+    let hasMask = false;
+    for (let i = 3; i < mData.length; i += 4) {
+      if (mData[i] > 0) {
+        hasMask = true;
+        break;
+      }
+    }
+
+    // Auto-apply Gemini Bottom-Right preset if no mask drawn yet
+    if (!hasMask && presetGeminiBr) {
+      presetGeminiBr.click();
+    }
 
     const selectedAlgo = document.querySelector('input[name="wm-algo"]:checked') ? document.querySelector('input[name="wm-algo"]:checked').value : 'alpha';
     const cleanCanvas = processWatermarkRemoval(imgCanvas, maskCanvas, selectedAlgo);

@@ -612,12 +612,12 @@ app.post('/api/remove-watermark-video', async (req, res) => {
     // Sanitize integer coordinates for FFmpeg delogo filter
     const delogoX = Math.max(0, Math.round(Number(x)));
     const delogoY = Math.max(0, Math.round(Number(y)));
-    const delogoW = Math.max(1, Math.round(Number(w)));
-    const delogoH = Math.max(1, Math.round(Number(h)));
+    const delogoW = Math.max(2, Math.round(Number(w)));
+    const delogoH = Math.max(2, Math.round(Number(h)));
 
     const ffmpegArgs = [
       '-i', inputPath,
-      '-vf', `delogo=x=${delogoX}:y=${delogoY}:w=${delogoW}:h=${delogoH}`,
+      '-vf', `delogo=x=${delogoX}:y=${delogoY}:w=${delogoW}:h=${delogoH}:show=0`,
       '-c:a', 'copy',
       '-y',
       outputPath
