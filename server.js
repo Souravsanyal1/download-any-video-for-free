@@ -11,7 +11,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: false,
   maxAge: 0,
@@ -548,6 +549,110 @@ app.post('/api/download', async (req, res) => {
       sendProgress(id, { status: 'error', message: `Download failed with exit code ${code}.` });
     }
   });
+});
+
+// Route: Upload Media for Watermark removal
+app.post('/api/upload-media', (req, res) => {
+  const { fileData, fileName, mimeType } = req.body;
+  if (!fileData) {
+    return res.status(400).json({ error: 'No file data provided.' });
+  }
+
+  try {
+    const matches = fileData.match(/^data:(.+);base64,(.+)$/);
+    const buffer = matches ? Buffer.from(matches[2], 'base64') : Buffer.from(fileData, 'base64');
+    
+    const ext = mimeType ? mimeType.split('/')[1] : 'bin';
+    const safeName = `uploaded_${Date.now()}.${ext.replace('jpeg', 'jpg')}`;
+    const targetPath = path.join(downloadsDir, safeName);
+    
+    fs.writeFileSync(targetPath, buffer);
+    res.json({ success: true, fileName: safeName, filePath: targetPath });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to save uploaded file.' });
+  }
+});
+
+// Route: Remove Watermark from Video using FFmpeg delogo filter
+app.post('/api/remove-watermark-video', async (req, res) => {
+  const { videoData, fileName, x, y, w, h } = req.body;
+
+  if (!hasFfmpeg) {
+    return res.status(400).json({ 
+      error: 'FFmpeg is required for video watermark removal. Please ensure FFmpeg is installed on your system.' 
+    });
+  }
+
+  if (x === undefined || y === undefined || !w || !h) {
+    return res.status(400).json({ error: 'Missing watermark coordinates (x, y, w, h).' });
+  }
+
+  let inputPath = '';
+  let tempInputCreated = false;
+
+  try {
+    if (fileName) {
+      inputPath = path.join(downloadsDir, path.basename(fileName));
+      if (!fs.existsSync(inputPath)) {
+        return res.status(404).json({ error: 'Specified video file not found on server.' });
+      }
+    } else if (videoData) {
+      const matches = videoData.match(/^data:(.+);base64,(.+)$/);
+      const buffer = matches ? Buffer.from(matches[2], 'base64') : Buffer.from(videoData, 'base64');
+      inputPath = path.join(downloadsDir, `upload_input_${Date.now()}.mp4`);
+      fs.writeFileSync(inputPath, buffer);
+      tempInputCreated = true;
+    } else {
+      return res.status(400).json({ error: 'No video file or video data provided.' });
+    }
+
+    const outputFileName = `clean_video_${Date.now()}.mp4`;
+    const outputPath = path.join(downloadsDir, outputFileName);
+
+    // Sanitize integer coordinates for FFmpeg delogo filter
+    const delogoX = Math.max(0, Math.round(Number(x)));
+    const delogoY = Math.max(0, Math.round(Number(y)));
+    const delogoW = Math.max(1, Math.round(Number(w)));
+    const delogoH = Math.max(1, Math.round(Number(h)));
+
+    const ffmpegArgs = [
+      '-i', inputPath,
+      '-vf', `delogo=x=${delogoX}:y=${delogoY}:w=${delogoW}:h=${delogoH}`,
+      '-c:a', 'copy',
+      '-y',
+      outputPath
+    ];
+
+    console.log(`Executing FFmpeg delogo filter: delogo=x=${delogoX}:y=${delogoY}:w=${delogoW}:h=${delogoH}`);
+
+    const child = spawn('ffmpeg', ffmpegArgs);
+    let stderr = '';
+
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    child.on('close', (code) => {
+      if (tempInputCreated && fs.existsSync(inputPath)) {
+        try { fs.unlinkSync(inputPath); } catch (e) {}
+      }
+
+      if (code === 0 && fs.existsSync(outputPath)) {
+        res.json({
+          success: true,
+          fileName: outputFileName,
+          downloadUrl: `/api/get-file?name=${outputFileName}`
+        });
+      } else {
+        console.error('FFmpeg delogo error:', stderr);
+        res.status(500).json({ error: 'FFmpeg watermark removal failed: ' + (stderr.slice(-200) || 'Unknown error') });
+      }
+    });
+
+  } catch (err) {
+    console.error('Video watermark removal error:', err);
+    res.status(500).json({ error: 'Failed to process video watermark removal.' });
+  }
 });
 
 // Route: Get / Instant Save file to browser

@@ -464,4 +464,539 @@ document.addEventListener('DOMContentLoaded', () => {
     progressPanel.classList.add('hidden');
     completionPanel.classList.add('hidden');
   }
+
+  /* ======================================================
+     TAB NAVIGATION SYSTEM
+     ====================================================== */
+  const navTabBtns = document.querySelectorAll('.nav-tab-btn');
+  const tabPanes = document.querySelectorAll('.tab-pane');
+
+  navTabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetTab = btn.getAttribute('data-tab');
+
+      navTabBtns.forEach(b => b.classList.remove('active'));
+      tabPanes.forEach(p => {
+        p.classList.remove('active');
+        p.classList.add('hidden');
+      });
+
+      btn.classList.add('active');
+      const activePane = document.getElementById(targetTab);
+      if (activePane) {
+        activePane.classList.remove('hidden');
+        activePane.classList.add('active');
+      }
+    });
+  });
+
+
+  /* ======================================================
+     1. IMAGE WATERMARK REMOVER (Canvas Inpainting Engine)
+     ====================================================== */
+  const imgDropzone = document.getElementById('img-dropzone');
+  const imgFileInput = document.getElementById('img-file-input');
+  const imgWorkspace = document.getElementById('img-workspace');
+  const imgCanvas = document.getElementById('img-canvas');
+  const toolBoxMode = document.getElementById('tool-box-mode');
+  const toolBrushMode = document.getElementById('tool-brush-mode');
+  const brushSizeContainer = document.getElementById('brush-size-container');
+  const brushSizeInput = document.getElementById('brush-size');
+  const brushSizeVal = document.getElementById('brush-size-val');
+  const btnClearImgMask = document.getElementById('btn-clear-img-mask');
+  const btnResetImg = document.getElementById('btn-reset-img');
+  const btnEraseImgWm = document.getElementById('btn-erase-img-wm');
+  const imgResultSection = document.getElementById('img-result-section');
+  const imgResultPreview = document.getElementById('img-result-preview');
+  const btnDownloadCleanImg = document.getElementById('btn-download-clean-img');
+  const btnEditAgainImg = document.getElementById('btn-edit-again-img');
+
+  let currentImage = null;
+  let imgCtx = null;
+  let maskCanvas = document.createElement('canvas');
+  let maskCtx = null;
+  let activeTool = 'box'; // 'box' or 'brush'
+  let isDrawingMask = false;
+  let startX = 0, startY = 0;
+  let currentBox = null;
+
+  // Dropzone events
+  imgDropzone.addEventListener('click', () => imgFileInput.click());
+  imgDropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    imgDropzone.classList.add('dragover');
+  });
+  imgDropzone.addEventListener('dragleave', () => imgDropzone.classList.remove('dragover'));
+  imgDropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    imgDropzone.classList.remove('dragover');
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      loadImageFile(e.dataTransfer.files[0]);
+    }
+  });
+  imgFileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      loadImageFile(e.target.files[0]);
+    }
+  });
+
+  function loadImageFile(file) {
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload a valid image file (PNG, JPG, WEBP).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const img = new Image();
+      img.onload = () => {
+        currentImage = img;
+        initImageCanvas();
+        imgDropzone.classList.add('hidden');
+        imgWorkspace.classList.remove('hidden');
+        imgResultSection.classList.add('hidden');
+      };
+      img.src = evt.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function initImageCanvas() {
+    if (!currentImage) return;
+    imgCanvas.width = currentImage.naturalWidth;
+    imgCanvas.height = currentImage.naturalHeight;
+    imgCtx = imgCanvas.getContext('2d');
+
+    maskCanvas.width = currentImage.naturalWidth;
+    maskCanvas.height = currentImage.naturalHeight;
+    maskCtx = maskCanvas.getContext('2d');
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+
+    currentBox = null;
+    redrawImageStage();
+  }
+
+  function redrawImageStage() {
+    if (!imgCtx || !currentImage) return;
+    imgCtx.drawImage(currentImage, 0, 0);
+
+    // Draw mask overlay
+    imgCtx.save();
+    imgCtx.globalAlpha = 0.45;
+    imgCtx.drawImage(maskCanvas, 0, 0);
+    imgCtx.restore();
+
+    // Draw current selection box if active
+    if (currentBox) {
+      imgCtx.strokeStyle = '#00f2fe';
+      imgCtx.lineWidth = Math.max(2, Math.round(imgCanvas.width / 400));
+      imgCtx.fillStyle = 'rgba(0, 242, 254, 0.25)';
+      imgCtx.fillRect(currentBox.x, currentBox.y, currentBox.w, currentBox.h);
+      imgCtx.strokeRect(currentBox.x, currentBox.y, currentBox.w, currentBox.h);
+    }
+  }
+
+  // Tool Modes
+  toolBoxMode.addEventListener('click', () => {
+    activeTool = 'box';
+    toolBoxMode.classList.add('active');
+    toolBrushMode.classList.remove('active');
+    brushSizeContainer.classList.add('hidden');
+  });
+
+  toolBrushMode.addEventListener('click', () => {
+    activeTool = 'brush';
+    toolBrushMode.classList.add('active');
+    toolBoxMode.classList.remove('active');
+    brushSizeContainer.classList.remove('hidden');
+  });
+
+  brushSizeInput.addEventListener('input', (e) => {
+    brushSizeVal.textContent = e.target.value + 'px';
+  });
+
+  btnClearImgMask.addEventListener('click', () => {
+    if (maskCtx) {
+      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+      currentBox = null;
+      redrawImageStage();
+    }
+  });
+
+  btnResetImg.addEventListener('click', () => {
+    imgFileInput.value = '';
+    currentImage = null;
+    imgWorkspace.classList.add('hidden');
+    imgResultSection.classList.add('hidden');
+    imgDropzone.classList.remove('hidden');
+  });
+
+  // Canvas Mouse Interactions
+  function getCanvasCoords(e) {
+    const rect = imgCanvas.getBoundingClientRect();
+    const scaleX = imgCanvas.width / rect.width;
+    const scaleY = imgCanvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
+    };
+  }
+
+  imgCanvas.addEventListener('mousedown', (e) => {
+    isDrawingMask = true;
+    const coords = getCanvasCoords(e);
+    startX = coords.x;
+    startY = coords.y;
+
+    if (activeTool === 'brush') {
+      maskCtx.fillStyle = '#ff0055';
+      maskCtx.beginPath();
+      maskCtx.arc(startX, startY, parseInt(brushSizeInput.value) / 2, 0, Math.PI * 2);
+      maskCtx.fill();
+      redrawImageStage();
+    }
+  });
+
+  imgCanvas.addEventListener('mousemove', (e) => {
+    if (!isDrawingMask) return;
+    const coords = getCanvasCoords(e);
+
+    if (activeTool === 'box') {
+      const w = coords.x - startX;
+      const h = coords.y - startY;
+      currentBox = {
+        x: w < 0 ? coords.x : startX,
+        y: h < 0 ? coords.y : startY,
+        w: Math.abs(w),
+        h: Math.abs(h)
+      };
+      redrawImageStage();
+    } else if (activeTool === 'brush') {
+      maskCtx.fillStyle = '#ff0055';
+      maskCtx.beginPath();
+      maskCtx.arc(coords.x, coords.y, parseInt(brushSizeInput.value) / 2, 0, Math.PI * 2);
+      maskCtx.fill();
+      redrawImageStage();
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (isDrawingMask) {
+      isDrawingMask = false;
+      if (activeTool === 'box' && currentBox) {
+        maskCtx.fillStyle = '#ff0055';
+        maskCtx.fillRect(currentBox.x, currentBox.y, currentBox.w, currentBox.h);
+        currentBox = null;
+        redrawImageStage();
+      }
+    }
+  });
+
+  // Inpainting Algorithm for Image Watermark Removal
+  btnEraseImgWm.addEventListener('click', () => {
+    if (!currentImage || !imgCtx) return;
+
+    const w = imgCanvas.width;
+    const h = imgCanvas.height;
+
+    const imgData = imgCtx.getImageData(0, 0, w, h);
+    const maskData = maskCtx.getImageData(0, 0, w, h);
+
+    const pixels = imgData.data;
+    const mask = maskData.data;
+
+    // Fast Inpainting / Smooth Patch Blend
+    const passes = 3;
+    for (let pass = 0; pass < passes; pass++) {
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const idx = (y * w + x) * 4;
+
+          // If mask is drawn over pixel
+          if (mask[idx + 3] > 0) {
+            let rAcc = 0, gAcc = 0, bAcc = 0, count = 0;
+
+            const neighbors = [
+              ((y - 1) * w + x) * 4,
+              ((y + 1) * w + x) * 4,
+              (y * w + (x - 1)) * 4,
+              (y * w + (x + 1)) * 4,
+              ((y - 1) * w + (x - 1)) * 4,
+              ((y - 1) * w + (x + 1)) * 4,
+              ((y + 1) * w + (x - 1)) * 4,
+              ((y + 1) * w + (x + 1)) * 4
+            ];
+
+            for (let nIdx of neighbors) {
+              if (mask[nIdx + 3] === 0 || pass > 0) {
+                rAcc += pixels[nIdx];
+                gAcc += pixels[nIdx + 1];
+                bAcc += pixels[nIdx + 2];
+                count++;
+              }
+            }
+
+            if (count > 0) {
+              pixels[idx] = Math.round(rAcc / count);
+              pixels[idx + 1] = Math.round(gAcc / count);
+              pixels[idx + 2] = Math.round(bAcc / count);
+            }
+          }
+        }
+      }
+    }
+
+    // Render result canvas
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = w;
+    tempCanvas.height = h;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.putImageData(imgData, 0, 0);
+
+    const resultUrl = tempCanvas.toDataURL('image/png');
+    imgResultPreview.src = resultUrl;
+    btnDownloadCleanImg.href = resultUrl;
+    btnDownloadCleanImg.download = `clean_image_${Date.now()}.png`;
+
+    imgResultSection.classList.remove('hidden');
+    imgResultSection.scrollIntoView({ behavior: 'smooth' });
+  });
+
+  btnEditAgainImg.addEventListener('click', () => {
+    imgResultSection.classList.add('hidden');
+    redrawImageStage();
+  });
+
+
+  /* ======================================================
+     2. VIDEO WATERMARK REMOVER (FFmpeg Engine)
+     ====================================================== */
+  const vidDropzone = document.getElementById('vid-dropzone');
+  const vidFileInput = document.getElementById('vid-file-input');
+  const vidWorkspace = document.getElementById('vid-workspace');
+  const wmVideoElement = document.getElementById('wm-video-element');
+  const wmVideoBox = document.getElementById('wm-video-box');
+  const btnResetVid = document.getElementById('btn-reset-vid');
+  const btnEraseVidWm = document.getElementById('btn-erase-vid-wm');
+  const vidProcessingLoader = document.getElementById('vid-processing-loader');
+  const vidResultSection = document.getElementById('vid-result-section');
+  const vidResultPreview = document.getElementById('vid-result-preview');
+  const btnDownloadCleanVid = document.getElementById('btn-download-clean-vid');
+  const btnEditAgainVid = document.getElementById('btn-edit-again-vid');
+
+  const roiXEl = document.getElementById('roi-x');
+  const roiYEl = document.getElementById('roi-y');
+  const roiWEl = document.getElementById('roi-w');
+  const roiHEl = document.getElementById('roi-h');
+
+  let currentVideoFile = null;
+  let currentVideoBase64 = '';
+
+  vidDropzone.addEventListener('click', () => vidFileInput.click());
+  vidDropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    vidDropzone.classList.add('dragover');
+  });
+  vidDropzone.addEventListener('dragleave', () => vidDropzone.classList.remove('dragover'));
+  vidDropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    vidDropzone.classList.remove('dragover');
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      loadVideoFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  vidFileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      loadVideoFile(e.target.files[0]);
+    }
+  });
+
+  function loadVideoFile(file) {
+    if (!file.type.startsWith('video/')) {
+      alert('Please select a valid video file.');
+      return;
+    }
+    currentVideoFile = file;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      currentVideoBase64 = e.target.result;
+      wmVideoElement.src = e.target.result;
+      vidDropzone.classList.add('hidden');
+      vidWorkspace.classList.remove('hidden');
+      vidResultSection.classList.add('hidden');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  btnResetVid.addEventListener('click', () => {
+    vidFileInput.value = '';
+    currentVideoFile = null;
+    currentVideoBase64 = '';
+    wmVideoElement.src = '';
+    vidWorkspace.classList.add('hidden');
+    vidResultSection.classList.add('hidden');
+    vidDropzone.classList.remove('hidden');
+  });
+
+  // Draggable & Resizable Bounding Box for Video ROI
+  let isDraggingBox = false;
+  let isResizingBox = false;
+  let activeHandle = null;
+  let boxStartX = 0, boxStartY = 0;
+  let initialLeft = 20, initialTop = 20, initialW = 120, initialH = 60;
+
+  wmVideoBox.addEventListener('mousedown', (e) => {
+    if (e.target.classList.contains('handle')) {
+      isResizingBox = true;
+      activeHandle = e.target;
+    } else {
+      isDraggingBox = true;
+    }
+    boxStartX = e.clientX;
+    boxStartY = e.clientY;
+
+    const style = window.getComputedStyle(wmVideoBox);
+    initialLeft = parseInt(style.left, 10) || 20;
+    initialTop = parseInt(style.top, 10) || 20;
+    initialW = parseInt(style.width, 10) || 120;
+    initialH = parseInt(style.height, 10) || 60;
+
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDraggingBox && !isResizingBox) return;
+
+    const dx = e.clientX - boxStartX;
+    const dy = e.clientY - boxStartY;
+    const container = document.querySelector('.video-stage-wrapper');
+    const cRect = container.getBoundingClientRect();
+
+    if (isDraggingBox) {
+      let newLeft = Math.max(0, Math.min(cRect.width - initialW, initialLeft + dx));
+      let newTop = Math.max(0, Math.min(cRect.height - initialH, initialTop + dy));
+      wmVideoBox.style.left = newLeft + 'px';
+      wmVideoBox.style.top = newTop + 'px';
+    } else if (isResizingBox && activeHandle) {
+      if (activeHandle.classList.contains('handle-se')) {
+        let newW = Math.max(30, Math.min(cRect.width - initialLeft, initialW + dx));
+        let newH = Math.max(20, Math.min(cRect.height - initialTop, initialH + dy));
+        wmVideoBox.style.width = newW + 'px';
+        wmVideoBox.style.height = newH + 'px';
+      } else if (activeHandle.classList.contains('handle-sw')) {
+        let newW = Math.max(30, initialW - dx);
+        let newLeft = Math.max(0, initialLeft + (initialW - newW));
+        let newH = Math.max(20, Math.min(cRect.height - initialTop, initialH + dy));
+        wmVideoBox.style.left = newLeft + 'px';
+        wmVideoBox.style.width = newW + 'px';
+        wmVideoBox.style.height = newH + 'px';
+      } else if (activeHandle.classList.contains('handle-ne')) {
+        let newW = Math.max(30, Math.min(cRect.width - initialLeft, initialW + dx));
+        let newH = Math.max(20, initialH - dy);
+        let newTop = Math.max(0, initialTop + (initialH - newH));
+        wmVideoBox.style.top = newTop + 'px';
+        wmVideoBox.style.width = newW + 'px';
+        wmVideoBox.style.height = newH + 'px';
+      } else if (activeHandle.classList.contains('handle-nw')) {
+        let newW = Math.max(30, initialW - dx);
+        let newLeft = Math.max(0, initialLeft + (initialW - newW));
+        let newH = Math.max(20, initialH - dy);
+        let newTop = Math.max(0, initialTop + (initialH - newH));
+        wmVideoBox.style.left = newLeft + 'px';
+        wmVideoBox.style.top = newTop + 'px';
+        wmVideoBox.style.width = newW + 'px';
+        wmVideoBox.style.height = newH + 'px';
+      }
+    }
+    updateRoiCoordinates();
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDraggingBox = false;
+    isResizingBox = false;
+    activeHandle = null;
+  });
+
+  function updateRoiCoordinates() {
+    if (!wmVideoElement.videoWidth || !wmVideoElement.videoHeight) return { x: 0, y: 0, w: 100, h: 100 };
+
+    const vRect = wmVideoElement.getBoundingClientRect();
+    const style = window.getComputedStyle(wmVideoBox);
+
+    const boxL = parseInt(style.left, 10) || 0;
+    const boxT = parseInt(style.top, 10) || 0;
+    const boxW = parseInt(style.width, 10) || 100;
+    const boxH = parseInt(style.height, 10) || 100;
+
+    const scaleX = wmVideoElement.videoWidth / vRect.width;
+    const scaleY = wmVideoElement.videoHeight / vRect.height;
+
+    const realX = Math.max(0, Math.round(boxL * scaleX));
+    const realY = Math.max(0, Math.round(boxT * scaleY));
+    const realW = Math.max(1, Math.round(boxW * scaleX));
+    const realH = Math.max(1, Math.round(boxH * scaleY));
+
+    roiXEl.textContent = realX;
+    roiYEl.textContent = realY;
+    roiWEl.textContent = realW;
+    roiHEl.textContent = realH;
+
+    return { x: realX, y: realY, w: realW, h: realH };
+  }
+
+  wmVideoElement.addEventListener('loadedmetadata', updateRoiCoordinates);
+
+  // Trigger Video Watermark Removal via Backend FFmpeg
+  btnEraseVidWm.addEventListener('click', async () => {
+    if (!currentVideoBase64) {
+      alert('Please upload a video file first.');
+      return;
+    }
+
+    const roi = updateRoiCoordinates();
+
+    vidWorkspace.classList.add('hidden');
+    vidProcessingLoader.classList.remove('hidden');
+
+    try {
+      const response = await fetch('/api/remove-watermark-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoData: currentVideoBase64,
+          x: roi.x,
+          y: roi.y,
+          w: roi.w,
+          h: roi.h
+        })
+      });
+
+      const data = await response.json();
+      vidProcessingLoader.classList.add('hidden');
+
+      if (!response.ok || !data.success) {
+        alert('Error: ' + (data.error || 'Video watermark removal failed.'));
+        vidWorkspace.classList.remove('hidden');
+        return;
+      }
+
+      vidResultPreview.src = data.downloadUrl;
+      btnDownloadCleanVid.href = data.downloadUrl;
+      btnDownloadCleanVid.download = data.fileName;
+
+      vidResultSection.classList.remove('hidden');
+      vidResultSection.scrollIntoView({ behavior: 'smooth' });
+    } catch (err) {
+      vidProcessingLoader.classList.add('hidden');
+      vidWorkspace.classList.remove('hidden');
+      alert('Request error: ' + err.message);
+    }
+  });
+
+  btnEditAgainVid.addEventListener('click', () => {
+    vidResultSection.classList.add('hidden');
+    vidWorkspace.classList.remove('hidden');
+  });
 });
+

@@ -43,9 +43,27 @@
       </div>
     </header>
 
+    <!-- Main Navigation Tabs -->
+    <nav class="app-navigation-tabs">
+      <button class="nav-tab-btn active" data-tab="tab-downloader">
+        <i data-lucide="video"></i>
+        <span>Video Downloader</span>
+      </button>
+      <button class="nav-tab-btn" data-tab="tab-image-wm">
+        <i data-lucide="image"></i>
+        <span>Image Watermark Remover</span>
+      </button>
+      <button class="nav-tab-btn" data-tab="tab-video-wm">
+        <i data-lucide="film"></i>
+        <span>Video Watermark Remover</span>
+      </button>
+    </nav>
+
     <!-- Main Section -->
     <main class="main-content">
-      <!-- Search Panel -->
+      <!-- Tab 1: Video Downloader Pane -->
+      <div id="tab-downloader" class="tab-pane active">
+        <!-- Search Panel -->
       <section class="search-section card glass">
         <h2 class="section-title">Download Any Video Instantly</h2>
         <p class="section-subtitle">Supports YouTube, Instagram, TikTok, Facebook, Twitter, and 1000+ more.</p>
@@ -220,6 +238,152 @@
 
         </div>
       </section>
+      </div> <!-- End of tab-downloader -->
+
+      <!-- Tab 2: Image Watermark Remover Pane -->
+      <div id="tab-image-wm" class="tab-pane hidden">
+        <section class="wm-section card glass">
+          <div class="wm-header">
+            <h2 class="section-title"><i data-lucide="image" class="mini-icon"></i> Image Watermark Remover</h2>
+            <p class="section-subtitle">Select or brush over any logo or watermark on an image to erase it instantly.</p>
+          </div>
+
+          <!-- Dropzone -->
+          <div id="img-dropzone" class="media-dropzone">
+            <i data-lucide="upload-cloud" class="dropzone-icon"></i>
+            <p class="dropzone-title">Drag & Drop Image here or <span>Browse File</span></p>
+            <span class="dropzone-hint">Supports PNG, JPG, JPEG, WEBP (Max 50MB)</span>
+            <input type="file" id="img-file-input" accept="image/*" class="hidden-file-input">
+          </div>
+
+          <!-- Canvas Workspace -->
+          <div id="img-workspace" class="wm-workspace hidden">
+            <div class="wm-toolbar">
+              <div class="tool-group">
+                <button id="tool-box-mode" class="tool-btn active" title="Box Selection Mode">
+                  <i data-lucide="square"></i> <span>Box Select</span>
+                </button>
+                <button id="tool-brush-mode" class="tool-btn" title="Brush Mode">
+                  <i data-lucide="brush"></i> <span>Brush</span>
+                </button>
+              </div>
+
+              <div id="brush-size-container" class="tool-group hidden">
+                <label for="brush-size">Size:</label>
+                <input type="range" id="brush-size" min="5" max="80" value="25">
+                <span id="brush-size-val">25px</span>
+              </div>
+
+              <div class="tool-group">
+                <button id="btn-clear-img-mask" class="secondary-btn sm"><i data-lucide="rotate-ccw"></i> Clear Mask</button>
+                <button id="btn-reset-img" class="secondary-btn sm"><i data-lucide="x"></i> Change Image</button>
+              </div>
+            </div>
+
+            <div class="canvas-stage-wrapper">
+              <canvas id="img-canvas" class="interactive-canvas"></canvas>
+            </div>
+
+            <div class="wm-action-bar">
+              <button id="btn-erase-img-wm" class="primary-btn lg">
+                <i data-lucide="sparkles"></i> <span>Erase Watermark Now</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Image Result Modal / Section -->
+          <div id="img-result-section" class="wm-result-card hidden">
+            <h3><i data-lucide="check-circle" class="success-icon"></i> Clean Image Ready!</h3>
+            <div class="result-preview-container">
+              <img id="img-result-preview" src="" alt="Clean Image Result" class="result-img">
+            </div>
+            <div class="result-actions">
+              <a id="btn-download-clean-img" href="#" download="clean_image.png" class="primary-btn">
+                <i data-lucide="download"></i> <span>Download Clean Image</span>
+              </a>
+              <button id="btn-edit-again-img" class="secondary-btn">
+                <i data-lucide="edit-3"></i> <span>Edit Again</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Tab 3: Video Watermark Remover Pane -->
+      <div id="tab-video-wm" class="tab-pane hidden">
+        <section class="wm-section card glass">
+          <div class="wm-header">
+            <h2 class="section-title"><i data-lucide="film" class="mini-icon"></i> Video Watermark Remover (FFmpeg Delogo)</h2>
+            <p class="section-subtitle">Select a video, drag the bounding box over the watermark logo, and remove it with FFmpeg.</p>
+          </div>
+
+          <!-- Video Upload / Select Dropzone -->
+          <div id="vid-dropzone" class="media-dropzone">
+            <i data-lucide="video" class="dropzone-icon"></i>
+            <p class="dropzone-title">Drag & Drop Video here or <span>Browse Video File</span></p>
+            <span class="dropzone-hint">Supports MP4, WEBM, MOV, MKV</span>
+            <input type="file" id="vid-file-input" accept="video/*" class="hidden-file-input">
+          </div>
+
+          <!-- Video Workspace -->
+          <div id="vid-workspace" class="wm-workspace hidden">
+            <div class="wm-toolbar">
+              <div class="tool-info">
+                <i data-lucide="info" class="mini-icon"></i>
+                <span>Drag box to watermark location and resize handles</span>
+              </div>
+              <div class="tool-group">
+                <button id="btn-reset-vid" class="secondary-btn sm"><i data-lucide="x"></i> Change Video</button>
+              </div>
+            </div>
+
+            <div class="video-stage-wrapper">
+              <video id="wm-video-element" controls crossorigin="anonymous"></video>
+              
+              <!-- Draggable & Resizable Watermark Selection Box -->
+              <div id="wm-video-box" class="wm-bounding-box">
+                <span class="box-label">Watermark Region</span>
+                <div class="handle handle-nw"></div>
+                <div class="handle handle-ne"></div>
+                <div class="handle handle-sw"></div>
+                <div class="handle handle-se"></div>
+              </div>
+            </div>
+
+            <div class="coordinates-bar">
+              <span>Selected ROI: X: <strong id="roi-x">0</strong>px | Y: <strong id="roi-y">0</strong>px | W: <strong id="roi-w">100</strong>px | H: <strong id="roi-h">100</strong>px</span>
+            </div>
+
+            <div class="wm-action-bar">
+              <button id="btn-erase-vid-wm" class="primary-btn lg">
+                <i data-lucide="wand-2"></i> <span>Remove Video Watermark (FFmpeg)</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Video Processing Loader -->
+          <div id="vid-processing-loader" class="loading-container hidden">
+            <div class="spinner-circle"></div>
+            <p class="loading-msg">Processing video with FFmpeg delogo filter... Please wait.</p>
+          </div>
+
+          <!-- Video Result Section -->
+          <div id="vid-result-section" class="wm-result-card hidden">
+            <h3><i data-lucide="check-circle" class="success-icon"></i> Clean Video Ready!</h3>
+            <div class="result-preview-container">
+              <video id="vid-result-preview" controls class="result-video"></video>
+            </div>
+            <div class="result-actions">
+              <a id="btn-download-clean-vid" href="#" class="primary-btn" target="_blank">
+                <i data-lucide="download"></i> <span>Download Clean Video</span>
+              </a>
+              <button id="btn-edit-again-vid" class="secondary-btn">
+                <i data-lucide="refresh-cw"></i> <span>Process Another Video</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
 
       <!-- Downloads History -->
       <section class="history-section card glass">
