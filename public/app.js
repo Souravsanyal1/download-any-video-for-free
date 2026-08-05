@@ -82,6 +82,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Active Context Warning: Alert user if accessing via wrong protocol/port
+  function safeLucide() {
+    if (typeof lucide !== 'undefined' && lucide && typeof lucide.createIcons === 'function') {
+      try {
+        lucide.createIcons();
+      } catch (e) {
+        console.warn('Lucide icon render warning:', e);
+      }
+    }
+  }
+
+  // Active Context Warning: Alert user if accessing via wrong protocol/port
   if (window.location.protocol === 'file:' || (window.location.port !== '3000' && window.location.port !== '')) {
     const banner = document.createElement('div');
     banner.className = 'alert-box warning-alert';
@@ -94,8 +105,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <p>You have opened the page via <strong>${window.location.protocol === 'file:' ? 'local files' : 'port ' + window.location.port}</strong>. The downloader engine runs exclusively on <a href="http://localhost:3000" style="color: var(--color-primary); font-weight: 700; text-decoration: underline;">http://localhost:3000</a>. Please double-click <strong>start.bat</strong> and use the window that opens.</p>
       </div>
     `;
-    document.querySelector('.main-content').prepend(banner);
-    lucide.createIcons();
+    const mainContent = document.querySelector('.main-content');
+    if (mainContent) mainContent.prepend(banner);
+    safeLucide();
   }
 
   // Fetch System Status
@@ -223,11 +235,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Trigger Download Processing
   async function startDownload(url, quality) {
     const isVercelHost = window.location.hostname.includes('vercel');
-    const directUrl = (currentVideoData && currentVideoData.direct_urls) ? currentVideoData.direct_urls[quality] : null;
 
-    // Direct Browser Download (Works seamlessly on Vercel, phones, and PCs)
-    if (directUrl || isVercelHost) {
-      const streamTarget = directUrl || `/api/stream?url=${encodeURIComponent(url)}&quality=${quality}`;
+    // On Vercel serverless (where disk storage is read-only/ephemeral), stream directly
+    if (isVercelHost) {
+      const streamTarget = `/api/stream?url=${encodeURIComponent(url)}&quality=${quality}`;
       const link = document.createElement('a');
       link.href = streamTarget;
       link.target = '_blank';
@@ -407,7 +418,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <p>No downloads in this session yet. Paste a link to get started!</p>
         </div>
       `;
-      lucide.createIcons();
+      safeLucide();
       return;
     }
 
@@ -441,7 +452,7 @@ document.addEventListener('DOMContentLoaded', () => {
       historyList.appendChild(card);
     });
 
-    lucide.createIcons();
+    safeLucide();
   }
 
   // Clear Session Logs
