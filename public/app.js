@@ -116,33 +116,47 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await fetchJSON('/api/status');
       
       // Update yt-dlp indicator
-      if (data.ytdlpReady) {
-        statusYtdlp.className = 'status-indicator ready';
-        statusYtdlp.querySelector('.text').textContent = 'Engine: Ready';
-      } else {
-        statusYtdlp.className = 'status-indicator loading';
-        statusYtdlp.querySelector('.text').textContent = 'Engine: Deploying...';
-        setTimeout(checkSystemStatus, 3000); // Retry checking until ready
+      if (statusYtdlp) {
+        const txt = statusYtdlp.querySelector('.text');
+        if (data.ytdlpReady) {
+          statusYtdlp.className = 'status-indicator ready';
+          if (txt) txt.textContent = 'Engine: Ready';
+        } else {
+          statusYtdlp.className = 'status-indicator loading';
+          if (txt) txt.textContent = 'Engine: Deploying...';
+        }
       }
       
       // Update FFmpeg indicator
-      if (data.hasFfmpeg) {
-        statusFfmpeg.className = 'status-indicator ready';
-        statusFfmpeg.querySelector('.text').textContent = 'FFmpeg: Connected';
-        ffmpegWarning.classList.add('hidden');
-      } else {
-        statusFfmpeg.className = 'status-indicator warning';
-        statusFfmpeg.querySelector('.text').textContent = 'FFmpeg: Missing';
+      if (statusFfmpeg) {
+        const txt = statusFfmpeg.querySelector('.text');
+        if (data.hasFfmpeg) {
+          statusFfmpeg.className = 'status-indicator ready';
+          if (txt) txt.textContent = 'FFmpeg: Connected';
+          if (ffmpegWarning) ffmpegWarning.classList.add('hidden');
+        } else {
+          statusFfmpeg.className = 'status-indicator warning';
+          if (txt) txt.textContent = 'FFmpeg: Missing';
+        }
       }
     } catch (error) {
       console.error('Failed to get status:', error);
-      statusYtdlp.className = 'status-indicator warning';
-      statusYtdlp.querySelector('.text').textContent = 'Engine: Offline';
+      if (statusYtdlp) {
+        statusYtdlp.className = 'status-indicator warning';
+        const txt = statusYtdlp.querySelector('.text');
+        if (txt) txt.textContent = 'Engine: Offline';
+      }
+      if (statusFfmpeg) {
+        statusFfmpeg.className = 'status-indicator warning';
+        const txt = statusFfmpeg.querySelector('.text');
+        if (txt) txt.textContent = 'FFmpeg: Offline';
+      }
     }
   }
 
-  // Initial Status Check
+  // Initial Status Check & Auto Refresh Status
   checkSystemStatus();
+  setInterval(checkSystemStatus, 5000);
   renderHistory();
 
   // Paste URL action
