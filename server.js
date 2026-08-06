@@ -463,6 +463,7 @@ app.get('/api/info', async (req, res) => {
 app.get('/api/stream', async (req, res) => {
   const videoUrl = req.query.url;
   const quality = req.query.quality || '720p';
+  const rotate = req.query.rotate || 'none';
 
   if (!videoUrl) {
     return res.status(400).send('Video URL is required');
@@ -491,6 +492,13 @@ app.get('/api/stream', async (req, res) => {
         ? `bestvideo[height<=${heightLimit}]+bestaudio/best[height<=${heightLimit}]/bestvideo+bestaudio/best` 
         : `best[protocol^=http][height<=${heightLimit}]/best[ext=mp4][height<=${heightLimit}]/b[height<=${heightLimit}]/best[height<=${heightLimit}]/best[protocol^=http]/best`);
 
+  let postProcessArgs = [];
+  if (rotate === '90_cw' && hasFfmpeg) {
+    postProcessArgs.push('--postprocessor-args', 'ffmpeg:-vf transpose=1');
+  } else if (rotate === '90_ccw' && hasFfmpeg) {
+    postProcessArgs.push('--postprocessor-args', 'ffmpeg:-vf transpose=2');
+  }
+
   const ext = quality === 'audio' ? 'mp3' : 'mp4';
   const fileName = `media_${Date.now()}.${ext}`;
 
@@ -501,6 +509,7 @@ app.get('/api/stream', async (req, res) => {
     '--no-playlist',
     '--no-check-certificates',
     '-f', formatArg,
+    ...postProcessArgs,
     '-o', '-',
     videoUrl
   ];

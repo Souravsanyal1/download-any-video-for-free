@@ -309,145 +309,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Trigger Download Processing
   async function startDownload(url, quality) {
-    const isVercelHost = window.location.hostname.includes('vercel');
-
-    // On Vercel serverless (where disk storage is read-only/ephemeral), stream directly
-    if (isVercelHost) {
-      const streamTarget = `/api/stream?url=${encodeURIComponent(url)}&quality=${quality}`;
-      const link = document.createElement('a');
-      link.href = streamTarget;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      if (currentVideoData) {
-        saveToHistory({
-          title: currentVideoData.title,
-          thumbnail: currentVideoData.thumbnail,
-          quality: quality,
-          uploader: currentVideoData.uploader,
-          duration: currentVideoData.duration,
-          timestamp: Date.now()
-        });
-      }
-
-      hideAllPanels();
-      completionPanel.classList.remove('hidden');
-      completionPanel.scrollIntoView({ behavior: 'smooth' });
-      return;
-    }
-
     const rotationActive = document.querySelector('input[name="video-rotation"]:checked');
     const rotate = rotationActive ? rotationActive.value : 'none';
 
-    hideAllPanels();
-    progressPanel.classList.remove('hidden');
-    progressPanel.scrollIntoView({ behavior: 'smooth' });
+    const isNonLocal = !window.location.hostname.includes('onrender.com') && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1');
+    const backendHost = isNonLocal ? RENDER_BACKEND_URL : '';
 
-    // Generate unique ID for tracing download stream
-    const downloadId = 'dl_' + Date.now() + Math.random().toString(36).substr(2, 5);
+    // Direct High-Speed Download Stream Target URL
+    const streamTarget = `${backendHost}/api/stream?url=${encodeURIComponent(url)}&quality=${encodeURIComponent(quality)}&rotate=${encodeURIComponent(rotate)}`;
 
-    // Reset Progress indicators
-    progressBarFill.style.width = '0%';
-    progressPercentTop.textContent = '0%';
-    metricSpeed.textContent = 'Connecting...';
-    metricSize.textContent = 'Calculating...';
-    metricEta.textContent = 'Estimating...';
-    if (progressStatusTitle) {
-      progressStatusTitle.textContent = 'Downloading Stream...';
-    }
+    // Trigger Browser Direct Download
+    const link = document.createElement('a');
+    link.href = streamTarget;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 
+    lastCompletedFileUrl = streamTarget;
 
-    // Start listening to the progress channel (SSE)
-    if (activeEventSource) {
-      activeEventSource.close();
-    }
-    
-    activeEventSource = new EventSource(`/api/progress?id=${downloadId}`);
-    
-    activeEventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      
-      if (data.status === 'downloading') {
-        if (progressStatusTitle) {
-          progressStatusTitle.textContent = 'Downloading Stream...';
-        }
-        const pct = Math.floor(data.percent);
-        progressBarFill.style.width = `${pct}%`;
-        progressPercentTop.textContent = `${pct}%`;
-        metricSpeed.textContent = data.speed;
-        metricSize.textContent = data.size;
-        metricEta.textContent = data.eta;
-      } else if (data.status === 'merging') {
-        progressBarFill.style.width = `99%`;
-        progressPercentTop.textContent = `99%`;
-        metricSpeed.textContent = data.speed || 'Processing...';
-        metricSize.textContent = data.size || 'Merging media streams';
-        metricEta.textContent = data.eta || 'Please wait...';
-        
-        if (progressStatusTitle) {
-          if (data.size && (data.size.includes('Rotat') || data.size.includes('rotat') || data.size.includes('transpos'))) {
-            progressStatusTitle.textContent = 'Rotating Video (PC Mode)...';
-          } else {
-            progressStatusTitle.textContent = 'Merging & Finalizing...';
-          }
-        }
-      } else if (data.status === 'completed') {
-        activeEventSource.close();
-        activeEventSource = null;
-        
-        if (data.fileUrl) {
-          lastCompletedFileUrl = data.fileUrl;
-        }
-
-        // Log to Session History
-        saveToHistory({
-          title: currentVideoData.title,
-          thumbnail: currentVideoData.thumbnail,
-          quality: quality,
-          uploader: currentVideoData.uploader,
-          duration: currentVideoData.duration,
-          timestamp: Date.now()
-        });
-
-        hideAllPanels();
-        completionPanel.classList.remove('hidden');
-        completionPanel.scrollIntoView({ behavior: 'smooth' });
-      } else if (data.status === 'error') {
-        activeEventSource.close();
-        activeEventSource = null;
-        
-        hideAllPanels();
-        errorMsg.textContent = data.message || 'Failed to download stream.';
-        errorBox.classList.remove('hidden');
-      }
-    };
-
-    activeEventSource.onerror = (err) => {
-      console.error('SSE connection lost:', err);
-      activeEventSource.close();
-    };
-
-    // Post start command to Express
-    try {
-      await fetchJSON('/api/download', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ url, quality, id: downloadId, rotate })
+    // Log to History
+    if (currentVideoData) {
+      saveToHistory({
+        title: currentVideoData.title,
+        thumbnail: currentVideoData.thumbnail,
+        quality: quality,
+        uploader: currentVideoData.uploader,
+        duration: currentVideoData.duration,
+        timestamp: Date.now()
       });
-    } catch (err) {
-      console.error('Failed to trigger post command:', err);
-      if (activeEventSource) {
-        activeEventSource.close();
-      }
-      hideAllPanels();
-      errorMsg.textContent = err.message || 'Server communications interrupted.';
-      errorBox.classList.remove('hidden');
     }
+
+    hideAllPanels();
+    completionPanel.classList.remove('hidden');
+    completionPanel.scrollIntoView({ behavior: 'smooth' });
   }
 
   // Open Downloads Folder via OS Command API
