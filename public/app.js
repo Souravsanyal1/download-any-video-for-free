@@ -55,18 +55,37 @@ document.addEventListener('DOMContentLoaded', () => {
   let downloadHistory = JSON.parse(localStorage.getItem('downloader_history') || '[]');
 
 
-  // Safe fetch wrapper with precision error catching
+  const RENDER_BACKEND_URL = 'https://download-any-video-for-free.onrender.com';
+
+  // Safe fetch wrapper with precision error catching & Render backend fallback
   async function fetchJSON(url, options = {}) {
+    let requestUrl = url;
     try {
-      const response = await fetch(url, options);
-      const contentType = response.headers.get('content-type');
+      let response = await fetch(requestUrl, options);
+      let contentType = response.headers.get('content-type');
       
+      // If relative API call returned HTML or error on Vercel, try Render live backend fallback
+      if (url.startsWith('/api') && (!response.ok || !contentType || !contentType.includes('application/json'))) {
+        if (!window.location.hostname.includes('onrender.com') && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+          try {
+            const fallbackUrl = RENDER_BACKEND_URL + url;
+            const fbResponse = await fetch(fallbackUrl, options);
+            const fbContentType = fbResponse.headers.get('content-type');
+            if (fbResponse.ok && fbContentType && fbContentType.includes('application/json')) {
+              return await fbResponse.json();
+            }
+          } catch (e) {
+            // fallback failed, continue to standard error handling
+          }
+        }
+      }
+
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
         if (response.status >= 500 || text.includes('Error')) {
-          throw new Error(`Internal Server Error (${response.status}). Please check the Node.js backend console for the error stack.`);
+          throw new Error(`Internal Server Error (${response.status}). Please check the server logs.`);
         }
-        throw new Error(`Invalid response type (Status ${response.status}). Make sure you are using http://localhost:3000.`);
+        throw new Error(`Invalid server response (Status ${response.status}).`);
       }
       
       const data = await response.json();
@@ -75,8 +94,21 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return data;
     } catch (err) {
+      if (url.startsWith('/api') && !window.location.hostname.includes('onrender.com') && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+        try {
+          const fallbackUrl = RENDER_BACKEND_URL + url;
+          const fbResponse = await fetch(fallbackUrl, options);
+          const fbContentType = fbResponse.headers.get('content-type');
+          if (fbResponse.ok && fbContentType && fbContentType.includes('application/json')) {
+            return await fbResponse.json();
+          }
+        } catch (e) {
+          // ignore fallback error
+        }
+      }
+
       if (err.message.includes('Failed to fetch') || err.name === 'TypeError') {
-        throw new Error('Could not connect to the backend server. Make sure start.bat is running and listening on port 3000.');
+        throw new Error('Could not connect to the backend server.');
       }
       throw err;
     }
