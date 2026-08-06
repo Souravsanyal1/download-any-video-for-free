@@ -57,28 +57,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const RENDER_BACKEND_URL = 'https://download-any-video-for-free.onrender.com';
 
-  // Safe fetch wrapper with precision error catching & Render backend fallback
+  // Safe fetch wrapper with precision error catching & Render backend routing
   async function fetchJSON(url, options = {}) {
     let requestUrl = url;
+    
+    // When running on Vercel (or any non-local/non-render domain), route /api calls to full Render backend
+    if (url.startsWith('/api') && !window.location.hostname.includes('onrender.com') && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+      requestUrl = RENDER_BACKEND_URL + url;
+    }
+
     try {
       let response = await fetch(requestUrl, options);
       let contentType = response.headers.get('content-type');
-      
-      // If relative API call returned HTML or error on Vercel, try Render live backend fallback
-      if (url.startsWith('/api') && (!response.ok || !contentType || !contentType.includes('application/json'))) {
-        if (!window.location.hostname.includes('onrender.com') && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
-          try {
-            const fallbackUrl = RENDER_BACKEND_URL + url;
-            const fbResponse = await fetch(fallbackUrl, options);
-            const fbContentType = fbResponse.headers.get('content-type');
-            if (fbResponse.ok && fbContentType && fbContentType.includes('application/json')) {
-              return await fbResponse.json();
-            }
-          } catch (e) {
-            // fallback failed, continue to standard error handling
-          }
-        }
-      }
 
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
@@ -94,16 +84,16 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return data;
     } catch (err) {
-      if (url.startsWith('/api') && !window.location.hostname.includes('onrender.com') && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+      // Fallback try relative if Render request failed
+      if (requestUrl.startsWith('http') && url.startsWith('/api')) {
         try {
-          const fallbackUrl = RENDER_BACKEND_URL + url;
-          const fbResponse = await fetch(fallbackUrl, options);
-          const fbContentType = fbResponse.headers.get('content-type');
-          if (fbResponse.ok && fbContentType && fbContentType.includes('application/json')) {
-            return await fbResponse.json();
+          const relResponse = await fetch(url, options);
+          const relContentType = relResponse.headers.get('content-type');
+          if (relResponse.ok && relContentType && relContentType.includes('application/json')) {
+            return await relResponse.json();
           }
         } catch (e) {
-          // ignore fallback error
+          // ignore relative fallback error
         }
       }
 
