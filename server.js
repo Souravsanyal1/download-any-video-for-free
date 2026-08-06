@@ -600,10 +600,12 @@ app.post('/api/download', async (req, res) => {
     }
   }
 
-  if (rotate === '90_cw' && hasFfmpeg) {
-    postProcessArgs.push('--postprocessor-args', 'ffmpeg:-vf transpose=1');
-  } else if (rotate === '90_ccw' && hasFfmpeg) {
-    postProcessArgs.push('--postprocessor-args', 'ffmpeg:-vf transpose=2');
+  if ((rotate === '90_cw' || rotate === '90_ccw') && hasFfmpeg) {
+    const vf = rotate === '90_cw' ? 'transpose=1' : 'transpose=2';
+    const execCmd = isWindows
+      ? `ffmpeg -y -i {} -vf ${vf} -c:a copy {}.rot.mp4 && move /y {}.rot.mp4 {}`
+      : `ffmpeg -y -i {} -vf ${vf} -c:a copy {}.rot.mp4 && mv {}.rot.mp4 {}`;
+    postProcessArgs.push('--exec', execCmd);
   }
 
   const outputTemplate = path.join(downloadsDir, '%(title)s.%(ext)s');
