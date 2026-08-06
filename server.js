@@ -847,6 +847,11 @@ app.post('/api/open-downloads', (req, res) => {
 
 
 
+// Catch-all route to serve index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`===============================================`);
