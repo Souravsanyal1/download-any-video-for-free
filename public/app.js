@@ -238,6 +238,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Handle Live Video Rotation Preview on Thumbnail
+  function updateRotationPreview() {
+    const selected = document.querySelector('input[name="video-rotation"]:checked');
+    const val = selected ? selected.value : 'none';
+    if (videoThumbnail) {
+      if (val === '90_cw') {
+        videoThumbnail.style.transform = 'rotate(90deg) scale(0.75)';
+      } else if (val === '90_ccw') {
+        videoThumbnail.style.transform = 'rotate(-90deg) scale(0.75)';
+      } else {
+        videoThumbnail.style.transform = 'rotate(0deg) scale(1)';
+      }
+      videoThumbnail.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+    }
+  }
+
+  document.querySelectorAll('input[name="video-rotation"]').forEach(input => {
+    input.addEventListener('change', updateRotationPreview);
+  });
+
   // Render Video Metadata and Formats
   function renderVideoDetails(data) {
     videoThumbnail.src = data.thumbnail;
@@ -245,6 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
     videoTitle.textContent = data.title;
     videoUploader.textContent = data.uploader;
     videoViews.textContent = data.views;
+    updateRotationPreview();
 
     // Show system FFmpeg warnings if higher quality is available but FFmpeg is missing
     const statusClass = statusFfmpeg.className;

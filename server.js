@@ -540,6 +540,12 @@ app.post('/api/download', async (req, res) => {
     }
   }
 
+  if (rotate === '90_cw' && hasFfmpeg) {
+    postProcessArgs.push('--postprocessor-args', 'ffmpeg:-vf transpose=1');
+  } else if (rotate === '90_ccw' && hasFfmpeg) {
+    postProcessArgs.push('--postprocessor-args', 'ffmpeg:-vf transpose=2');
+  }
+
   const outputTemplate = path.join(downloadsDir, '%(title)s.%(ext)s');
 
   const args = [
