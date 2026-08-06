@@ -1,0 +1,9 @@
+node_modules
+downloads
+bin
+.git
+.gitignore
+.env
+*.log
+.gemini
+.agents

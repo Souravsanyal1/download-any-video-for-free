@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Status Indicators
   const statusYtdlp = document.getElementById('status-ytdlp');
   const statusFfmpeg = document.getElementById('status-ffmpeg');
+  const statusMongo = document.getElementById('status-mongo');
   const ffmpegWarning = document.getElementById('ffmpeg-warning');
   
   // Loading & Error States
@@ -139,6 +140,18 @@ document.addEventListener('DOMContentLoaded', () => {
           if (txt) txt.textContent = 'FFmpeg: Missing';
         }
       }
+
+      // Update MongoDB indicator
+      if (statusMongo) {
+        const txt = statusMongo.querySelector('.text');
+        if (data.mongoConnected) {
+          statusMongo.className = 'status-indicator ready';
+          if (txt) txt.textContent = 'MongoDB: Connected';
+        } else {
+          statusMongo.className = 'status-indicator warning';
+          if (txt) txt.textContent = 'MongoDB: Offline';
+        }
+      }
     } catch (error) {
       console.error('Failed to get status:', error);
       if (statusYtdlp) {
@@ -151,13 +164,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const txt = statusFfmpeg.querySelector('.text');
         if (txt) txt.textContent = 'FFmpeg: Offline';
       }
+      if (statusMongo) {
+        statusMongo.className = 'status-indicator warning';
+        const txt = statusMongo.querySelector('.text');
+        if (txt) txt.textContent = 'MongoDB: Offline';
+      }
     }
   }
 
   // Initial Status Check & Auto Refresh Status
   checkSystemStatus();
   setInterval(checkSystemStatus, 5000);
-  renderHistory();
+  loadHistory();
 
   // Paste URL action
   pasteBtn.addEventListener('click', async () => {
@@ -412,24 +430,67 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
 
-  // History cache logging
-  function saveToHistory(item) {
-    // Keep max 20 session logs
+  // Fetch History from MongoDB server or local fallback
+  async function loadHistory() {
+    try {
+      const res = await fetch('/api/history');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.history) && data.history.length > 0) {
+          downloadHistory = data.history;
+          localStorage.setItem('downloader_history', JSON.stringify(downloadHistory));
+        }
+      }
+    } catch (e) {
+      console.warn('MongoDB history sync warning:', e.message);
+    }
+    renderHistory();
+  }
+
+  // History cache logging & MongoDB persistence
+  async function saveToHistory(item) {
     downloadHistory.unshift(item);
-    if (downloadHistory.length > 20) {
+    if (downloadHistory.length > 50) {
       downloadHistory.pop();
     }
     localStorage.setItem('downloader_history', JSON.stringify(downloadHistory));
     renderHistory();
+
+    try {
+      await fetch('/api/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item)
+      });
+    } catch (e) {
+      console.warn('Failed to sync history item to MongoDB:', e.message);
+    }
+  }
+
+  // Delete single history item
+  async function deleteHistoryItem(id, index) {
+    if (index >= 0 && index < downloadHistory.length) {
+      downloadHistory.splice(index, 1);
+      localStorage.setItem('downloader_history', JSON.stringify(downloadHistory));
+      renderHistory();
+    }
+
+    if (id) {
+      try {
+        await fetch(`/api/history/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      } catch (e) {
+        console.warn('Failed to delete history item from MongoDB:', e.message);
+      }
+    }
   }
 
   // Render History lists
   function renderHistory() {
-    if (downloadHistory.length === 0) {
+    if (!downloadHistory || downloadHistory.length === 0) {
       historyList.innerHTML = `
         <div class="empty-history">
           <i data-lucide="cloud-download" class="empty-history-icon"></i>
-          <p>No downloads in this session yet. Paste a link to get started!</p>
+          <p>No downloads in session/database yet. Paste a link to get started!</p>
         </div>
       `;
       safeLucide();
@@ -437,20 +498,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     historyList.innerHTML = '';
-    downloadHistory.forEach(item => {
+    downloadHistory.forEach((item, index) => {
       const card = document.createElement('div');
       card.className = 'history-item';
       
       const badgeClass = item.quality === 'audio' ? 'badge-mp3' : 'badge-completed';
-      const badgeText = item.quality === 'audio' ? 'MP3' : item.quality.toUpperCase();
+      const badgeText = (item.quality || '720p').toUpperCase();
 
       card.innerHTML = `
         <div class="hist-left">
-          <img src="${item.thumbnail}" alt="Thumbnail" class="hist-thumb">
+          <img src="${item.thumbnail || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=200'}" alt="Thumbnail" class="hist-thumb">
           <div class="hist-details">
-            <h4 class="hist-title" title="${item.title}">${item.title}</h4>
+            <h4 class="hist-title" title="${item.title || 'Video'}">${item.title || 'Video Download'}</h4>
             <div class="hist-meta">
-              <span>${item.uploader}</span> &bull; <span>${item.duration}</span>
+              <span>${item.uploader || 'Downloader'}</span> &bull; <span>${item.duration || '00:00'}</span>
               <span class="hist-badge ${badgeClass}">${badgeText}</span>
             </div>
           </div>
@@ -459,21 +520,33 @@ document.addEventListener('DOMContentLoaded', () => {
           <button class="icon-action-btn open-file-trigger" title="Access file directory">
             <i data-lucide="external-link"></i>
           </button>
+          <button class="icon-action-btn delete-hist-trigger" title="Delete from MongoDB database" style="color: var(--color-danger, #ff4d4d);">
+            <i data-lucide="trash-2"></i>
+          </button>
         </div>
       `;
       
       card.querySelector('.open-file-trigger').addEventListener('click', openDownloadsDirectory);
+      card.querySelector('.delete-hist-trigger').addEventListener('click', () => {
+        deleteHistoryItem(item.id || item._id, index);
+      });
       historyList.appendChild(card);
     });
 
     safeLucide();
   }
 
-  // Clear Session Logs
-  clearHistoryBtn.addEventListener('click', () => {
+  // Clear Session & Database Logs
+  clearHistoryBtn.addEventListener('click', async () => {
     downloadHistory = [];
     localStorage.removeItem('downloader_history');
     renderHistory();
+
+    try {
+      await fetch('/api/history/clear', { method: 'POST' });
+    } catch (e) {
+      console.warn('Failed to clear MongoDB history:', e.message);
+    }
   });
 
   // Download Another Trigger
@@ -934,18 +1007,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-    tempCanvas.height = h;
-    const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.putImageData(imgData, 0, 0);
-
-    const resultUrl = tempCanvas.toDataURL('image/png');
-    imgResultPreview.src = resultUrl;
-    btnDownloadCleanImg.href = resultUrl;
-    btnDownloadCleanImg.download = `clean_image_${Date.now()}.png`;
-
-    imgResultSection.classList.remove('hidden');
-    imgResultSection.scrollIntoView({ behavior: 'smooth' });
-  });
 
   btnEditAgainImg.addEventListener('click', () => {
     imgResultSection.classList.add('hidden');

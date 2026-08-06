@@ -6,6 +6,7 @@ const https = require('https');
 const os = require('os');
 const { spawn, exec } = require('child_process');
 const open = require('open');
+const { MongoClient, ObjectId } = require('mongodb');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -40,6 +41,108 @@ try {
   }
 } catch (e) {
   console.error('Directory creation warning:', e.message);
+}
+
+// MongoDB Atlas Configuration & Connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://souravislam99099_db_user:Z8zn8imsOiq3wHCc@anydownloader.3cgpzjz.mongodb.net/?appName=anydownloader';
+const DB_NAME = 'anydownloader';
+const COLLECTION_NAME = 'history';
+
+let mongoClient = null;
+let db = null;
+let historyCollection = null;
+let isMongoConnected = false;
+
+async function connectMongoDB() {
+  try {
+    mongoClient = new MongoClient(MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000,
+    });
+    await mongoClient.connect();
+    db = mongoClient.db(DB_NAME);
+    historyCollection = db.collection(COLLECTION_NAME);
+    isMongoConnected = true;
+    console.log('✔ Connected to MongoDB Atlas successfully.');
+  } catch (err) {
+    isMongoConnected = false;
+    console.warn('⚠ MongoDB Atlas connection warning:', err.message);
+  }
+}
+
+connectMongoDB().catch(console.error);
+
+// MongoDB Helper Methods
+async function saveHistoryItem(item) {
+  if (!isMongoConnected || !historyCollection) return null;
+  try {
+    const historyDoc = {
+      title: item.title || 'Untitled Video',
+      url: item.url || item.webpage_url || '',
+      quality: item.quality || '720p',
+      thumbnail: item.thumbnail || '',
+      duration: item.duration || '00:00',
+      uploader: item.uploader || 'Unknown',
+      status: item.status || 'completed',
+      fileName: item.fileName || '',
+      downloadedAt: item.downloadedAt ? new Date(item.downloadedAt) : new Date(),
+    };
+    const result = await historyCollection.insertOne(historyDoc);
+    return { ...historyDoc, _id: result.insertedId.toString(), id: result.insertedId.toString() };
+  } catch (err) {
+    console.error('Failed to save history to MongoDB:', err.message);
+    return null;
+  }
+}
+
+async function getHistoryItems() {
+  if (!isMongoConnected || !historyCollection) return [];
+  try {
+    const docs = await historyCollection.find({}).sort({ downloadedAt: -1 }).limit(100).toArray();
+    return docs.map(doc => ({
+      id: doc._id.toString(),
+      _id: doc._id.toString(),
+      title: doc.title,
+      url: doc.url,
+      quality: doc.quality,
+      thumbnail: doc.thumbnail,
+      duration: doc.duration,
+      uploader: doc.uploader,
+      status: doc.status,
+      fileName: doc.fileName,
+      timestamp: doc.downloadedAt
+    }));
+  } catch (err) {
+    console.error('Failed to fetch history from MongoDB:', err.message);
+    return [];
+  }
+}
+
+async function deleteHistoryItem(id) {
+  if (!isMongoConnected || !historyCollection) return false;
+  try {
+    let query = {};
+    if (ObjectId.isValid(id)) {
+      query = { _id: new ObjectId(id) };
+    } else {
+      query = { id: id };
+    }
+    const result = await historyCollection.deleteOne(query);
+    return result.deletedCount > 0;
+  } catch (err) {
+    console.error('Failed to delete history item from MongoDB:', err.message);
+    return false;
+  }
+}
+
+async function clearHistoryItems() {
+  if (!isMongoConnected || !historyCollection) return false;
+  try {
+    await historyCollection.deleteMany({});
+    return true;
+  } catch (err) {
+    console.error('Failed to clear history in MongoDB:', err.message);
+    return false;
+  }
 }
 
 // OS specific binary
@@ -140,9 +243,43 @@ app.get('/api/status', (req, res) => {
   res.json({
     ytdlpReady: isYtdlpReady,
     hasFfmpeg,
+    mongoConnected: isMongoConnected,
     platform: process.platform,
     downloadsFolder: downloadsDir
   });
+});
+
+// Route: Get History from MongoDB
+app.get('/api/history', async (req, res) => {
+  const items = await getHistoryItems();
+  res.json({
+    success: true,
+    mongoConnected: isMongoConnected,
+    history: items
+  });
+});
+
+// Route: Save/Sync History Item to MongoDB
+app.post('/api/history', async (req, res) => {
+  const item = req.body;
+  if (!item || (!item.title && !item.url)) {
+    return res.status(400).json({ error: 'History item metadata is required' });
+  }
+  const saved = await saveHistoryItem(item);
+  res.json({ success: Boolean(saved), item: saved });
+});
+
+// Route: Delete History Item from MongoDB
+app.delete('/api/history/:id', async (req, res) => {
+  const { id } = req.params;
+  const deleted = await deleteHistoryItem(id);
+  res.json({ success: deleted });
+});
+
+// Route: Clear All History in MongoDB
+app.post('/api/history/clear', async (req, res) => {
+  const cleared = await clearHistoryItems();
+  res.json({ success: cleared });
 });
 
 // Route: Get Video Info

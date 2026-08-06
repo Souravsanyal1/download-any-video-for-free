@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  downloader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aetherstream-downloader
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - MONGODB_URI=mongodb+srv://souravislam99099_db_user:Z8zn8imsOiq3wHCc@anydownloader.3cgpzjz.mongodb.net/?appName=anydownloader
+    volumes:
+      - ./downloads:/app/downloads
+    restart: unless-stopped
