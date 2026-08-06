@@ -66,6 +66,8 @@ async function connectMongoDB() {
   } catch (err) {
     isMongoConnected = false;
     console.warn('⚠ MongoDB Atlas connection warning:', err.message);
+    // Retry connection after 30 seconds
+    setTimeout(connectMongoDB, 30000);
   }
 }
 
