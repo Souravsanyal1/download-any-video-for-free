@@ -284,11 +284,25 @@ app.post('/api/history/clear', async (req, res) => {
   res.json({ success: cleared });
 });
 
+// In-memory cache for video info metadata to ensure instant response times
+const videoInfoCache = new Map();
+
 // Route: Get Video Info
 app.get('/api/info', async (req, res) => {
   const videoUrl = req.query.url;
   if (!videoUrl) {
     return res.status(400).json({ error: 'Video URL is required' });
+  }
+
+  // Check in-memory cache for instant response (< 5ms)
+  if (videoInfoCache.has(videoUrl)) {
+    const cached = videoInfoCache.get(videoUrl);
+    if (Date.now() - cached.timestamp < 15 * 60 * 1000) {
+      console.log(`⚡ Returning cached metadata for: ${videoUrl}`);
+      return res.json(cached.data);
+    } else {
+      videoInfoCache.delete(videoUrl);
+    }
   }
 
   try {
@@ -299,8 +313,17 @@ app.get('/api/info', async (req, res) => {
 
   console.log(`Fetching metadata for: ${videoUrl}`);
 
-  // Run: yt-dlp --dump-json URL
-  const child = spawn(ytdlpPath, ['--dump-json', videoUrl]);
+  // Run yt-dlp with speed optimization flags (--no-playlist, --skip-download, --no-call-home, --socket-timeout)
+  const child = spawn(ytdlpPath, [
+    '--dump-json',
+    '--no-playlist',
+    '--no-warnings',
+    '--no-call-home',
+    '--skip-download',
+    '--socket-timeout', '10',
+    videoUrl
+  ]);
+
   let stdoutData = '';
   let stderrData = '';
 
@@ -364,7 +387,7 @@ app.get('/api/info', async (req, res) => {
         directUrls['720p'] = info.url;
       }
 
-      res.json({
+      const responseData = {
         title: info.title,
         thumbnail: info.thumbnail || (info.thumbnails && info.thumbnails.length ? info.thumbnails[info.thumbnails.length - 1].url : ''),
         duration: formatDuration(info.duration),
@@ -374,7 +397,10 @@ app.get('/api/info', async (req, res) => {
         webpage_url: info.webpage_url,
         qualities: availableQualities,
         direct_urls: directUrls
-      });
+      };
+
+      videoInfoCache.set(videoUrl, { timestamp: Date.now(), data: responseData });
+      res.json(responseData);
     } catch (err) {
       console.error('Failed to parse yt-dlp output:', err);
       res.status(500).json({ error: 'Failed to process video metadata.' });
